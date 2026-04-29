@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Résultats, ignorer les fichiers pour le moment
+results/*.png
+results/*.pdf
+results/*.csv
+results/*.txt
+
+# Docs, ignorer les .pdf pour le moment
+docs/*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
