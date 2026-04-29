@@ -96,8 +96,7 @@ def simuler_M1_joint(m, n, T, n_repetitions):
     Simule M1 pour obtenir la distribution jointe (temps, distance).
 
     À chaque répétition, on tire t uniformément dans [0, T], puis on fait
-    marcher deux marcheurs depuis le centre de la grille pendant t pas.
-    On enregistre le couple (t, distance finale entre les deux marcheurs).
+    marcher deux marcheurs depuis un point tiré au hasard sur la grille pendant t pas.
 
     Paramètres :
         m : probabilité de se déplacer à chaque pas
@@ -117,9 +116,10 @@ def simuler_M1_joint(m, n, T, n_repetitions):
         # On tire un temps aléatoire dans [0, T]
         t = np.random.randint(0, T + 1)
 
-        # Les deux marcheurs partent du centre de la grille
-        x1, y1 = n // 2, n // 2
-        x2, y2 = n // 2, n // 2
+        # Les deux marcheurs partent du même point tiré au hasard sur la grille
+        x0, y0 = np.random.randint(0, n), np.random.randint(0, n)
+        x1, y1 = x0, y0
+        x2, y2 = x0, y0
 
         # On fait avancer les deux marcheurs pendant t pas
         for i in range(t):

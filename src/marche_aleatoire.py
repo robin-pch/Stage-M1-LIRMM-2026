@@ -92,7 +92,7 @@ def simuler_M1(m, n, t, n_repetitions):
     """
     Simule le modèle M1 sur plusieurs répétitions.
 
-    Deux marcheurs partent du même point (centre de la grille).
+    Deux marcheurs partent du même point.
     On les fait avancer pendant t pas de temps, indépendamment l'un de l'autre.
     On enregistre la distance euclidienne entre eux à la fin de chaque répétition.
 
@@ -109,9 +109,10 @@ def simuler_M1(m, n, t, n_repetitions):
 
     for rep in range(n_repetitions):
 
-        # Les deux marcheurs partent du centre de la grille
-        x1, y1 = n // 2, n // 2
-        x2, y2 = n // 2, n // 2
+        # Les deux marcheurs partent du même point tiré au hasard sur la grille
+        x0, y0 = np.random.randint(0, n), np.random.randint(0, n)
+        x1, y1 = x0, y0
+        x2, y2 = x0, y0
 
         # On fait avancer les deux marcheurs pendant t pas
         for i in range(t):
