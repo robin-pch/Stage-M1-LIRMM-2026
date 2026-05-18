@@ -70,6 +70,38 @@ Options disponibles :
 | `--afficher`    | Affiche les graphiques à l'écran                         | -        |
 | `--sauvegarder` | Sauvegarde les graphiques en `.png`                      | -        |
 
+---
+ 
+### `src/moran_spatialise_v3.py` : Processus de Moran spatialisé (version objet)
+ 
+Compare les distributions forward et backward sur une grille n x n via un processus
+de Moran spatialisé. A chaque pas, un individu en A meurt et l'individu en B se reproduit
+en deux : un reste en B, l'autre occupe A.
+ 
+**Backward** : on tire deux individus au présent et on remonte les événements pour
+trouver leur coalescence. t=1 = 1 pas avant le présent.
+ 
+**Forward** : on construit un arbre de descendants (classe `Noeud`). A chaque
+bifurcation, on compte les descendants vivants des deux côtés via un parcours
+post-ordre itératif. Un noeud est valide si les deux côtés ont au moins un descendant
+vivant au temps T. Les temps valides sont convertis dans le même repère que le backward.
+ 
+```bash
+python src/moran_spatialise_v3.py --n 7 --T 50000 --rep 200 --mode compare --afficher
+python src/moran_spatialise_v3.py --n 7 --mode estimer_T --rep 30
+```
+ 
+Options disponibles :
+ 
+| Option          | Description                                      | Défaut   |
+|-----------------|--------------------------------------------------|----------|
+| `--n`           | Taille de la grille (n x n)                      | `7`      |
+| `--T`           | Nombre de pas de Moran                           | `50000`  |
+| `--rep`         | Nombre de repetitions                            | `200`    |
+| `--mode`        | `compare` ou `estimer_T`                         | `compare`|
+| `--afficher`    | Affiche les graphiques a l'ecran                 | -        |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`              | -        |
+
 ## Dépendances
 
 ```bash
