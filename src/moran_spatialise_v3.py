@@ -351,12 +351,16 @@ def simuler_forward(n, T, n_repetitions, paires):
                 noeud.desc2 = noeud.fils2.desc1 + noeud.fils2.desc2
 
         # --- Collecte des noeuds valides ---
+        # On répète le temps desc1 * desc2 fois pour pondérer :
+        # un vieux noeud avec beaucoup de descendants des deux côtés
+        # a plus de chances d'être "vu" en backward, on compense ici.
         taille_avant = len(temps_liste)
 
         for noeud in tous_les_noeuds:
             if not noeud.est_feuille:
                 if noeud.desc1 >= 1 and noeud.desc2 >= 1:
-                    temps_liste.append(noeud.temps)
+                    poids = noeud.desc1 * noeud.desc2
+                    temps_liste.extend([noeud.temps] * poids)
 
         if len(temps_liste) == taille_avant:
             n_zero = n_zero + 1
