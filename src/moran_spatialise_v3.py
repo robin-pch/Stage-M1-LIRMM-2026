@@ -321,24 +321,20 @@ def simuler_forward(n, T, n_repetitions, paires):
             # On note le temps de la bifurcation sur le père
             pere.temps = t + 1
 
+            # L'ancien occupant de A "meurt" : on le marque 
+            grille[xA][yA].est_feuille = False
             grille[xA][yA] = fils_A
             grille[xB][yB] = fils_B
 
             tous_les_noeuds.append(fils_A)
             tous_les_noeuds.append(fils_B)
 
-        # --- Noeuds vivants au temps T ---
-        # Un noeud est vivant s'il est encore dans grille à la fin.
-        vivants_ids = set()
-        for x in range(n):
-            for y in range(n):
-                vivants_ids.add(id(grille[x][y]))
-
         # --- Marquer les feuilles vivantes ---
-        # Convention Guindon : une feuille vivante a desc1=1, desc2=0.
-        # Une feuille morte garde desc1=0, desc2=0 (valeurs par défaut).
+        # est_feuille=True signifie exactement "vivant au temps T" :
+        # les feuilles mortes ont été marquées est_feuille=False au moment
+        # où elles ont été écrasées par un événement A.
         for noeud in tous_les_noeuds:
-            if noeud.est_feuille and id(noeud) in vivants_ids:
+            if noeud.est_feuille:
                 noeud.desc1 = 1
 
         # --- Post-ordre itératif ---
@@ -346,7 +342,7 @@ def simuler_forward(n, T, n_repetitions, paires):
         # Parcourir à l'envers = traiter les fils avant leurs pères = post-ordre.
         for i in range(len(tous_les_noeuds) - 1, -1, -1):
             noeud = tous_les_noeuds[i]
-            if not noeud.est_feuille:
+            if noeud.fils1 is not None:  # noeud interne (a vraiment bifurqué)
                 noeud.desc1 = noeud.fils1.desc1 + noeud.fils1.desc2
                 noeud.desc2 = noeud.fils2.desc1 + noeud.fils2.desc2
 
@@ -357,7 +353,7 @@ def simuler_forward(n, T, n_repetitions, paires):
         taille_avant = len(temps_liste)
 
         for noeud in tous_les_noeuds:
-            if not noeud.est_feuille:
+            if noeud.fils1 is not None:  # noeud interne (a vraiment bifurqué)
                 if noeud.desc1 >= 1 and noeud.desc2 >= 1:
                     poids = noeud.desc1 * noeud.desc2
                     temps_liste.extend([noeud.temps] * poids)
