@@ -1,4 +1,4 @@
-# Stage M1 Bioinformatique – Robin Pioch
+# Stage M1 Bioinformatique - Robin Pioch
 
 **LIRMM, Université de Montpellier**  
 Encadrant : Stéphane Guindon  
@@ -25,7 +25,7 @@ results/    --> graphiques générés (non versionnés)
 indépendamment pendant `t` pas. On mesure la distance euclidienne entre eux à la fin.
 
 **M2 (backward-in-time / coalescence)** : deux marcheurs partent de points séparés
-par une distance `d0`. On stoppe quand ils se retrouvent au même nœud et on enregistre
+par une distance `d0`. On stoppe quand ils se retrouvent au même noeud et on enregistre
 le temps de coalescence.
 
 ```bash
@@ -33,13 +33,11 @@ python src/marche_aleatoire.py --modele M1 --m 0.5 --n 100 --t 500 --rep 200
 python src/marche_aleatoire.py --modele M2 --m 0.5 --n 100 --d0 10 --rep 200
 ```
 
-Options disponibles :
-
 | Option          | Description                                      | Défaut |
 |-----------------|--------------------------------------------------|--------|
 | `--modele`      | Modèle à simuler : `M1` ou `M2`                 | -      |
 | `--m`           | Probabilité de se déplacer à chaque pas          | `0.5`  |
-| `--n`           | Taille de la grille (n × n)                      | `100`  |
+| `--n`           | Taille de la grille (n x n)                      | `100`  |
 | `--rep`         | Nombre de répétitions                            | `200`  |
 | `--t`           | [M1] Nombre de pas de temps                      | `500`  |
 | `--d0`          | [M2] Distance initiale entre les deux marcheurs  | `10`   |
@@ -58,12 +56,10 @@ soient tous les deux aléatoires, puis leurs densités jointes sont comparées v
 python src/marche_aleatoire_eq.py --m 0.5 --n 15 --T 2000 --rep 8000
 ```
 
-Options disponibles :
-
 | Option          | Description                                              | Défaut   |
 |-----------------|----------------------------------------------------------|----------|
 | `--m`           | Probabilité de se déplacer à chaque pas                  | `0.5`    |
-| `--n`           | Taille de la grille (n × n)                              | `15`     |
+| `--n`           | Taille de la grille (n x n)                              | `15`     |
 | `--T`           | Temps maximal (t tiré dans [0, T] pour M1)               | `2000`   |
 | `--rep`         | Nombre de répétitions                                    | `8000`   |
 | `--mode`        | Type de graphique : `joint` (2D) ou `marginal` (1D)      | `joint`  |
@@ -71,36 +67,41 @@ Options disponibles :
 | `--sauvegarder` | Sauvegarde les graphiques en `.png`                      | -        |
 
 ---
- 
-### `src/moran_spatialise_v3.py` : Processus de Moran spatialisé (version objet)
- 
-Compare les distributions forward et backward sur une grille n x n via un processus
-de Moran spatialisé. A chaque pas, un individu en A meurt et l'individu en B se reproduit
-en deux : un reste en B, l'autre occupe A.
- 
-**Backward** : on tire deux individus au présent et on remonte les événements pour
-trouver leur coalescence. t=1 = 1 pas avant le présent.
- 
-**Forward** : on construit un arbre de descendants (classe `Noeud`). A chaque
-bifurcation, on compte les descendants vivants des deux côtés via un parcours
-post-ordre itératif. Un noeud est valide si les deux côtés ont au moins un descendant
-vivant au temps T. Les temps valides sont convertis dans le même repère que le backward.
- 
+
+### `src/moran_spatialise.py` : Processus de Moran spatialisé
+
+Compare les distributions forward et backward sur une grille l x l.
+A chaque pas, on tire B au hasard sur la grille. B se propage sur A avec
+probabilité m/4 par direction disponible, et 1 - k*m/4 de rester sur place
+(k = nb de voisins de B). Les événements "rester sur place" sont inclus
+dans la liste et comptent comme un pas de temps.
+
+**Forward** : on construit un arbre de descendants (classe `Noeud`). Pour chaque
+noeud valide (descendants vivants des deux côtés), on enregistre le temps et
+la distance entre feuilles.
+
+**Backward** : on tire deux individus au présent selon un schéma d'échantillonnage
+et on remonte les événements jusqu'à coalescence.
+
+Les trois schémas (uniforme, cercle, diagonale) tournent à chaque répétition.
+T est calculé automatiquement depuis la courbe analytique si non fourni.
+
 ```bash
-python src/moran_spatialise_v3.py --n 7 --T 50000 --rep 200 --mode compare --afficher
-python src/moran_spatialise_v3.py --n 7 --mode estimer_T --rep 30
+python src/moran_spatialise.py --l 7 --rep 200 --afficher
+python src/moran_spatialise.py --l 7 --T 50000 --rep 200 --sauvegarder
 ```
- 
-Options disponibles :
- 
-| Option          | Description                                      | Défaut   |
-|-----------------|--------------------------------------------------|----------|
-| `--n`           | Taille de la grille (n x n)                      | `7`      |
-| `--T`           | Nombre de pas de Moran                           | `50000`  |
-| `--rep`         | Nombre de repetitions                            | `200`    |
-| `--mode`        | `compare` ou `estimer_T`                         | `compare`|
-| `--afficher`    | Affiche les graphiques a l'ecran                 | -        |
-| `--sauvegarder` | Sauvegarde les graphiques en `.png`              | -        |
+
+| Option          | Description                                       | Défaut |
+|-----------------|---------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)              | `7`    |
+| `--T`           | Nombre de pas. Si absent, calculé automatiquement | -      |
+| `--m`           | Taux de migration                                 | `1.0`  |
+| `--rep`         | Nombre de répétitions                             | `200`  |
+| `--sigma`       | Ecart-type pour le schéma diagonale               | `1.0`  |
+| `--rayon`       | Rayon pour le schéma cercle                       | `l/4`  |
+| `--quantile`    | Percentile pour le crop des histogrammes          | `99`   |
+| `--afficher`    | Affiche les graphiques à l'écran                  | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`               | -      |
 
 ## Dépendances
 
