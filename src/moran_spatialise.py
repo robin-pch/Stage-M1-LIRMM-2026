@@ -5,46 +5,36 @@
 # Auteur : Robin Pioch
 # Stage M1 Bioinformatique, Université de Montpellier
 # Encadrant : Stéphane Guindon (LIRMM)
-# Mai 2026
+# Mai-Juin 2026
 #
-# Ce que fait ce script :
+# On simule un processus de Moran spatialisé sur une grille l x l
+# (population n = l*l). À chaque pas, on tire B au hasard sur la grille.
+# B se propage sur A : B écrase A. La destination A est choisie avec
+# probabilité m/4 par direction disponible, et 1 - k*m/4 de rester sur
+# place (k = nb de voisins de B : 4 au centre, 3 sur un bord, 2 en angle).
+# Les événements "rester sur place" (A = B) sont enregistrés comme les
+# autres. Dans forward, ils ne créent pas de noeud (continue). Dans
+# backward, ils ne déplacent aucune lignée.
 #
-#   On simule un processus de Moran spatialisé sur une grille n x n.
-#   Règle du jeu : à chaque pas, on choisit au hasard deux cases voisines
-#   A et B. L'individu en A meurt. L'individu en B se reproduit deux fois :
-#   un enfant reste en B, l'autre va en A. La grille est toujours pleine.
-#
-#   Le but est de comparer deux approches :
-#
-#   FORWARD : on simule toute l'histoire de la grille sur T pas.
-#     On tire deux individus au présent et on remonte leur arbre
-#     généalogique pour trouver quand leurs lignées se rejoignent.
-#
-#   BACKWARD : on tire deux individus au présent et on remonte
-#     dans le passé en tirant des événements Moran un par un.
-#     On s'arrête quand les deux lignées coalescent.
-#
-#   SURVIE : approche de la première génération proposée par Stéphane.
-#     Au premier pas, deux lignées naissent (A et B). On simule T pas
-#     et on regarde si les deux ont encore des descendants au présent.
-#     S(t) = proba que les deux survivent jusqu'au présent.
-#     p(t) = S(t-1) - S(t) : densité de coalescence forward.
-#
-#   Si les approches décrivent le même processus,
-#   les distributions jointes (temps, distance) doivent coïncider.
+# Pour chaque répétition, on génère les événements une seule fois, on
+# fait le forward (qui donne n_paires), puis le backward trois fois
+# (uniforme, cercle, diagonale) en tirant ce même nombre de paires.
 #
 # Usage :
-#   python moran_spatialise.py --n 10 --mode estimer_T --rep 30
-#   python moran_spatialise.py --n 10 --T 131000 --rep 500 --mode compare --afficher
-#   python moran_spatialise.py --n 10 --T 131000 --rep 500 --mode survie --afficher
+#   python moran_spatialise.py --l 7 --T 50000 --rep 200 --afficher
+#   python moran_spatialise.py --l 7 --rep 200 --afficher
+#   python moran_spatialise.py --l 7 --rep 200 --sauvegarder
 #
 # Options :
-#   --n : taille de la grille (défaut : 10)
-#   --T : nombre de pas de Moran (défaut : 5000)
-#   --rep : nombre de répétitions (défaut : 1000)
-#   --mode : estimer_T / compare / survie
-#   --afficher : affiche les graphiques
-#   --sauvegarder : sauvegarde les graphiques en .png
+#   --l          : côté de la grille (défaut : 7), population = l*l
+#   --T          : nombre de pas. Si absent, calculé automatiquement.
+#   --m          : taux de migration (défaut : 1.0)
+#   --rep        : nombre de répétitions (défaut : 200)
+#   --sigma      : écart-type pour le schéma diagonale (défaut : 1.0)
+#   --rayon      : rayon pour le schéma cercle (défaut : l/4)
+#   --quantile   : percentile pour le crop des histogrammes (défaut : 99)
+#   --afficher   : affiche les graphiques
+#   --sauvegarder: sauvegarde les graphiques en .png
 # ----------------------------------------------------------------------
 
 import numpy as np
@@ -52,556 +42,686 @@ import matplotlib.pyplot as plt
 import argparse
 import sys
 
-# -----------------------------------------------------------------------------
+
+# =============================================================================
+# Classe Noeud
+# =============================================================================
+
+class Noeud:
+    """
+    Représente un noeud dans l'arbre de descendance (forward).
+
+    Chaque événement Moran crée deux fils : un en A, un en B.
+    Les feuilles vivantes à la fin sont celles encore présentes dans la grille.
+
+    Attributs :
+        x, y : position sur la grille
+        temps : pas de création (absolu, depuis t=0)
+        fils1, fils2 : fils gauche et droit (None si feuille)
+        est_feuille : True tant que le noeud n'a pas bifurqué
+        desc1, desc2 : nb de descendants vivants de chaque côté
+        feuilles1, feuilles2 : coordonnées (x, y) des feuilles vivantes de chaque côté
+        est_dans_zone : True si la feuille est dans la zone d'échantillonnage
+        feuilles1_zone, feuilles2_zone : sous-ensemble de feuilles1/2 dans la zone
+    """
+
+    def __init__(self, x, y, temps):
+        self.x = x
+        self.y = y
+        self.temps = temps
+        self.fils1 = None
+        self.fils2 = None
+        self.est_feuille = True
+        self.desc1 = 0
+        self.desc2 = 0
+        self.feuilles1 = []
+        self.feuilles2 = []
+        self.est_dans_zone = False
+        self.feuilles1_zone = []
+        self.feuilles2_zone = []
+
+    def afficher(self, profondeur=0):
+        # pour le debug seulement
+        indent = "  " * profondeur
+        print(f"{indent}Noeud t={self.temps} ({self.x},{self.y}) "
+              f"feuille={self.est_feuille} desc=({self.desc1},{self.desc2})")
+        if self.fils1 is not None:
+            self.fils1.afficher(profondeur + 1)
+        if self.fils2 is not None:
+            self.fils2.afficher(profondeur + 1)
+
+
+# =============================================================================
 # Fonctions utilitaires
-# -----------------------------------------------------------------------------
+# =============================================================================
 
-def construire_paires_voisins(n):
+def generer_evenements(l, T, m):
     """
-    Liste toutes les paires de cases adjacentes sur la grille n x n.
+    Génère exactement T événements Moran.
 
-    Deux cases sont voisines si elles sont côte à côte horizontalement
-    ou verticalement (pas les diagonales). Les bords sont réfléchissants :
-    une case en bord n'a pas de voisin de l'autre côté.
+    Les tirages aléatoires sont pré-générés en avance par blocs (plus rapide
+    que T appels numpy individuels). Les événements "rester sur place" (A = B)
+    sont inclus : ils comptent comme un pas de temps où rien ne se passe.
 
-    Paramètres :
-        n : taille de la grille (n x n)
-
-    Retourne :
-        paires : liste de tuples ((x1, y1), (x2, y2))
+    Retourne une liste de T tuples ((xA, yA), (xB, yB)).
     """
-    paires = []
-    for x in range(n):
-        for y in range(n):
-            if x + 1 < n: # bords réfléchissants
-                paires.append(((x, y), (x + 1, y)))
-            if y + 1 < n:
-                paires.append(((x, y), (x, y + 1)))
-    return paires
+    evenements = []
+    # On tire 4*T valeurs d'un coup comme marge, au cas où beaucoup tombent
+    # sur "rester sur place"
+    indices_B = np.random.randint(0, l * l, size=T * 4)
+    tirages_r = np.random.rand(T * 4)
+    i = 0
+
+    while len(evenements) < T:
+        if i >= len(indices_B):
+            # si par malchance la marge n'était pas suffisante, on régénère
+            indices_B = np.random.randint(0, l * l, size=T)
+            tirages_r = np.random.rand(T)
+            i = 0
+
+        xB, yB = indices_B[i] // l, indices_B[i] % l
+
+        voisins = []
+        if xB > 0:
+            voisins.append((xB - 1, yB))
+        if xB < l - 1:
+            voisins.append((xB + 1, yB))
+        if yB > 0:
+            voisins.append((xB, yB - 1))
+        if yB < l - 1:
+            voisins.append((xB, yB + 1))
+
+        k = len(voisins)
+        p_rester = 1.0 - k * m / 4.0
+        r = tirages_r[i]
+        i = i + 1
+
+        if r < p_rester:
+            xA, yA = xB, yB  # rester sur place : A = B
+        else:
+            idx_voisin = int((r - p_rester) / (m / 4.0))
+            idx_voisin = min(idx_voisin, k - 1)
+            xA, yA = voisins[idx_voisin]
+        evenements.append(((xA, yA), (xB, yB)))
+
+    return evenements
 
 
 def distance(x1, y1, x2, y2):
-    """
-    Distance euclidienne entre deux cases de la grille.
-
-    Paramètres :
-        x1, y1 : coordonnées de la première case
-        x2, y2 : coordonnées de la deuxième case
-
-    Retourne :
-        distance : float
-    """
+    """Distance euclidienne entre deux cases."""
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
-# -----------------------------------------------------------------------------
-# Estimation de T_mrca
-# -----------------------------------------------------------------------------
-
-def estimer_T_mrca(n, n_essais):
+def trouver_case_plus_proche(l, px, py):
     """
-    Estime le nombre de pas nécessaires pour que toute la grille ait
-    un seul ancêtre commun (le MRCA).
-
-    On fait tourner le processus en backward : chaque case démarre avec
-    son propre identifiant de lignée. À chaque événement (A <- B), toutes
-    les cases qui ont la lignée de A prennent la lignée de B. On compte
-    jusqu'à ce qu'il ne reste plus qu'une seule lignée.
-
-    Paramètres :
-        n : taille de la grille
-        n_essais : nombre de répétitions pour estimer la moyenne
-
-    Retourne :
-        t_moyen, t_max : (float, int) en pas de Moran
+    Projette un point continu (px, py) sur la grille en arrondissant
+    et en clippant pour rester dans les bornes.
     """
-    paires = construire_paires_voisins(n)
-    resultats = []
-
-    for _ in range(n_essais):
-
-        # Chaque case part avec un identifiant unique
-        lignee = np.arange(n * n).reshape(n, n)
-        t = 0
-
-        while np.unique(lignee).size > 1:
-            A, B = paires[np.random.randint(len(paires))]
-            if np.random.rand() < 0.5: # Façon de rendre aléatoire qui est A et qui est B
-                A, B = B, A
-            # Toutes les cases avec la lignée de A rejoignent la lignée de B
-            lignee[lignee == lignee[A]] = lignee[B]
-            t += 1
-
-        resultats.append(t)
-
-    return np.mean(resultats), np.max(resultats)
+    x = int(np.clip(round(px), 0, l - 1))
+    y = int(np.clip(round(py), 0, l - 1))
+    return x, y
 
 
-# -----------------------------------------------------------------------------
+def case_dans_zone(l, x, y, schema, sigma=1.0, rayon=None):
+    """
+    Retourne True si la case (x, y) est dans la zone du schéma.
+
+    uniforme  : toutes les cases
+    cercle    : distance au centre <= rayon
+    diagonale : |y - x| <= sigma
+    """
+    if rayon is None:
+        rayon = l / 4.0
+
+    if schema == "uniforme":
+        return True
+
+    if schema == "cercle":
+        cx, cy = (l - 1) / 2.0, (l - 1) / 2.0
+        return distance(x, y, cx, cy) <= rayon
+
+    if schema == "diagonale":
+        return abs(y - x) <= sigma
+
+    return True
+
+
+def cases_dans_zone(l, schema, sigma=1.0, rayon=None):
+    """
+    Retourne la liste de toutes les cases dans la zone du schéma.
+
+    Calculée une seule fois avant la boucle des répétitions, pour ne pas
+    refaire ce travail à chaque paire tirée dans backward.
+    """
+    cases = []
+    for x in range(l):
+        for y in range(l):
+            if case_dans_zone(l, x, y, schema, sigma=sigma, rayon=rayon):
+                cases.append((x, y))
+    return cases
+
+
+def tirer_paire(cases_valides):
+    """
+    Tire deux cases distinctes au hasard dans la liste des cases valides.
+
+    Le petit trick sur j évite d'obtenir i == j sans introduire de biais
+    dans le tirage.
+    """
+    n = len(cases_valides)
+    i = np.random.randint(0, n)
+    j = np.random.randint(0, n - 1)
+    if j >= i:
+        j = j + 1
+    x1, y1 = cases_valides[i]
+    x2, y2 = cases_valides[j]
+    return x1, y1, x2, y2
+
+
+# =============================================================================
+# Choix automatique de T
+# =============================================================================
+
+def calculer_T(n, m):
+    """
+    Calcule T à partir de la courbe analytique (loi géométrique, p = m/n^2).
+
+    On cherche T tel que 99.99% des coalescences ont eu lieu avant T,
+    puis on multiplie par 1.3 pour avoir une petite marge de sécurité.
+    On ne peut pas prendre seuil = 1 exactement car log(0) est indéfini.
+    """
+    p = m / (n * n)
+    seuil = 0.9999
+    T = int(np.ceil(np.log(1.0 - seuil) / np.log(1.0 - p)) * 1.3)
+    return T
+
+
+# =============================================================================
 # Simulation FORWARD
-# -----------------------------------------------------------------------------
+# =============================================================================
 
-def simuler_forward(n, T, n_repetitions):
+def forward(l, T, evenements, schema="uniforme", sigma=1.0, rayon=None):
     """
-    Simule le processus de Moran en forward et remonte les généalogies.
+    Calcule p(t) en forward en construisant un arbre de descendants.
 
-    Pour chaque répétition, on génère T événements Moran indépendants,
-    on tire deux individus au présent, puis on remonte leur arbre
-    généalogique en lisant les événements à l'envers jusqu'à trouver
-    leur ancêtre commun.
+    À chaque événement (B se propage sur A), l'occupant de B bifurque et
+    devient un noeud interne avec deux fils (un en A, un en B).
 
-    On enregistre l'âge de l'ancêtre commun (T - k) et la distance
-    entre les deux individus au présent. On mesure la distance au présent
-    et pas à la coalescence parce qu'à la coalescence les deux lignées
-    sont forcément voisines (distance = 1 toujours).
+    À la fin, on parcourt la liste à l'envers pour calculer le nombre de
+    descendants vivants de chaque côté (post-ordre itératif — la version
+    récursive provoquait des RecursionError pour T > ~500).
 
-    On génère un historique différent pour chaque paire.
-    Si on réutilisait le même, tous les temps tomberaient sur les mêmes
-    pas de temps et ça créerait un artefact dans la distribution.
+    Pour un schéma non-uniforme, seules les feuilles dans la zone comptent
+    pour valider un noeud. Les distances ne sont calculées qu'entre feuilles
+    dans la zone. n_in et n_total servent au facteur de normalisation.
 
-    Paramètres :
-        n : taille de la grille
-        T : nombre de pas de Moran simulés
-        n_repetitions : nombre de paires tirées
+    Les temps sont convertis depuis le repère absolu vers "pas avant le
+    présent" (t=1 = dernier pas), pour cohérence avec backward.
 
-    Retourne :
-        temps_liste : array des âges des ancêtres communs trouvés
-        distances_liste : array des distances au présent correspondantes
-        n_non_coal : nombre de paires sans ancêtre trouvé dans [0, T]
+    Retourne (temps_array, distances_array, n_paires, n_in, n_total).
     """
-    paires = construire_paires_voisins(n)
+    # initialisation : une case = un noeud feuille
+    grille = [[None] * l for _ in range(l)]
+    tous_les_noeuds = []
+
+    for x in range(l):
+        for y in range(l):
+            noeud = Noeud(x=x, y=y, temps=0)
+            grille[x][y] = noeud
+            tous_les_noeuds.append(noeud)
+
+    # avancer dans le temps : chaque événement crée deux nouveaux noeuds
+    # sauf si A=B (rester sur place) : dans ce cas rien ne change
+    for t in range(T):
+        A, B = evenements[t]
+        xA, yA = A
+        xB, yB = B
+
+        if (xA, yA) == (xB, yB):
+            continue  # pas de temps sans bifurcation
+
+        pere = grille[xB][yB]
+
+        fils_A = Noeud(x=xA, y=yA, temps=t + 1)
+        fils_B = Noeud(x=xB, y=yB, temps=t + 1)
+
+        pere.fils1 = fils_A
+        pere.fils2 = fils_B
+        pere.est_feuille = False
+        pere.temps = t + 1
+
+        grille[xA][yA].est_feuille = False
+        grille[xA][yA] = fils_A
+        grille[xB][yB] = fils_B
+
+        tous_les_noeuds.append(fils_A)
+        tous_les_noeuds.append(fils_B)
+
+    # marquer les feuilles vivantes (celles encore dans la grille à T)
+    for noeud in tous_les_noeuds:
+        if noeud.est_feuille:
+            noeud.desc1 = 1
+            noeud.feuilles1 = [(noeud.x, noeud.y)]
+            noeud.est_dans_zone = case_dans_zone(
+                l, noeud.x, noeud.y, schema, sigma=sigma, rayon=rayon
+            )
+            if noeud.est_dans_zone:
+                noeud.feuilles1_zone = [(noeud.x, noeud.y)]
+
+    # post-ordre itératif : les pères sont créés avant leurs fils,
+    # donc parcourir à l'envers revient à traiter les fils en premier
+    for i in range(len(tous_les_noeuds) - 1, -1, -1):
+        noeud = tous_les_noeuds[i]
+        if noeud.fils1 is not None:
+            noeud.desc1 = noeud.fils1.desc1 + noeud.fils1.desc2
+            noeud.desc2 = noeud.fils2.desc1 + noeud.fils2.desc2
+            noeud.feuilles1 = noeud.fils1.feuilles1 + noeud.fils1.feuilles2
+            noeud.feuilles2 = noeud.fils2.feuilles1 + noeud.fils2.feuilles2
+            noeud.feuilles1_zone = noeud.fils1.feuilles1_zone + noeud.fils1.feuilles2_zone
+            noeud.feuilles2_zone = noeud.fils2.feuilles1_zone + noeud.fils2.feuilles2_zone
+
+    # collecte des noeuds valides : desc1 >= 1 et desc2 >= 1,
+    # avec au moins une feuille dans la zone de chaque côté
+    temps_zone = []
+    distances_zone = []
+    n_in = 0
+    n_total = 0
+
+    for noeud in tous_les_noeuds:
+        if noeud.fils1 is not None:
+            if noeud.desc1 >= 1 and noeud.desc2 >= 1:
+                for (xa, ya) in noeud.feuilles1:
+                    for (xb, yb) in noeud.feuilles2:
+                        d = distance(xa, ya, xb, yb)
+                        in_zone = (
+                            case_dans_zone(l, xa, ya, schema, sigma=sigma, rayon=rayon)
+                            and
+                            case_dans_zone(l, xb, yb, schema, sigma=sigma, rayon=rayon)
+                        )
+                        n_total = n_total + 1
+                        if in_zone:
+                            n_in = n_in + 1
+                            temps_zone.append(noeud.temps)
+                            distances_zone.append(d)
+
+    n_paires = len(temps_zone)
+
+    # conversion en "pas avant le présent" : t=1 = dernier événement
+    temps_array = np.array(temps_zone)
+    distances_array = np.array(distances_zone)
+    if len(temps_array) > 0:
+        temps_array = T - temps_array + 1
+
+    return temps_array, distances_array, n_paires, n_in, n_total
+
+
+# =============================================================================
+# Simulation BACKWARD
+# =============================================================================
+
+def backward(l, T, n_paires, evenements, cases_valides, schema="uniforme",
+             d0_min=0.0, d0_max=float("inf"), sigma=1.0, rayon=None):
+    """
+    Simule la coalescence de n_paires paires en remontant les événements.
+
+    On tire deux cases au présent, puis on remonte : si une case A a été
+    écrasée par B à un certain pas, la lignée en A vient de B. Quand les
+    deux lignées se retrouvent sur la même case, elles ont coalescé.
+
+    t=1 = dernier événement (1 pas avant le présent),
+    t=T = premier événement.
+
+    Retourne (temps_array, distances_array, n_non_coal).
+    """
     temps_liste = []
     distances_liste = []
     n_non_coal = 0
 
-    for _ in range(n_repetitions):
+    for _ in range(n_paires):
 
-        # Stockage de l'historique des événements : liste de tuples (A, B) pour chaque pas
-        evenements = []
-        for _ in range(T):
-            A, B = paires[np.random.randint(len(paires))]
-            if np.random.rand() < 0.5:
-                A, B = B, A
-            evenements.append((A, B))
+        x1, y1, x2, y2 = tirer_paire(cases_valides)
+        d0 = distance(x1, y1, x2, y2)
 
-        # Deux cases distinctes tirées au hasard au présent
-        while True:
-            xi, yi = np.random.randint(0, n), np.random.randint(0, n)
-            xj, yj = np.random.randint(0, n), np.random.randint(0, n)
-            if (xi, yi) != (xj, yj):
-                break
-
-        d0 = distance(xi, yi, xj, yj) # distance au présent
-        
-        # Initialisation des ancêtres : au départ chaque individu est son propre ancêtre
-        anc_i = (xi, yi)
-        anc_j = (xj, yj)
         coalesce = False
 
-        # On lit les événements à l'envers
         for k in range(T - 1, -1, -1):
             A, B = evenements[k]
-            if anc_i == A:
-                anc_i = B
-            if anc_j == A:
-                anc_j = B
-            if anc_i == anc_j:
+
+            if A == (x1, y1):
+                x1, y1 = B
+            if A == (x2, y2):
+                x2, y2 = B
+
+            if (x1, y1) == (x2, y2):
                 temps_liste.append(T - k)
                 distances_liste.append(d0)
                 coalesce = True
                 break
 
-        # Si on n'a pas trouvé d'ancêtre commun dans les T pas on compte comme non coalescé
         if not coalesce:
-            n_non_coal += 1
+            n_non_coal = n_non_coal + 1
 
     return np.array(temps_liste), np.array(distances_liste), n_non_coal
 
 
-# -----------------------------------------------------------------------------
-# Simulation BACKWARD
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Affichage
+# =============================================================================
 
-def simuler_backward(n, T, n_repetitions):
+def afficher_resultats(resultats_fwd, resultats_bwd, facteurs_norm,
+                       l, T, m, quantile, afficher, sauvegarder, sigma=1.0, rayon=None):
     """
-    Simule la coalescence de deux lignées en backward sous Moran.
+    Produit les figures de comparaison forward / backward.
 
-    On tire deux individus au présent et on remonte dans le passé en
-    tirant des événements Moran un par un. À chaque événement (A <- B) :
-        - Si une lignée est en A et l'autre en B : coalescence.
-        - Si une lignée est en A (et l'autre ailleurs) : elle recule vers B.
-        - Si aucune des deux n'est touchée : on passe au suivant.
+    Figure 1 : forward uniforme vs backward uniforme + courbe analytique.
+    Figure 2 : distributions jointes (temps, distance) pour l'uniforme.
+    Figures 3+ : pour cercle et diagonale :
+        A) forward schéma vs forward uniforme (gris)
+        B) backward schéma vs backward uniforme (gris)
+        C+D) distributions jointes forward et backward côte à côte
 
-    On enregistre le temps de coalescence et la distance initiale
-    (entre les deux individus au présent, avant toute remontée).
-
-    Paramètres :
-        n : taille de la grille
-        T : nombre de pas maximum avant d'abandonner
-        n_repetitions : nombre de paires tirées
-
-    Retourne :
-        temps_liste : array des temps de coalescence
-        distances_liste : array des distances initiales correspondantes
-        n_non_coal : nombre de paires non coalescées dans [0, T]
+    L'axe des temps des histogrammes est coupé au percentile `quantile`
+    pour ne pas écraser la zone dense. L'axe des distances est commun
+    à toutes les figures jointes pour faciliter la comparaison.
     """
-    paires = construire_paires_voisins(n)
-    temps_liste = []
-    distances_liste = []
-    n_non_coal = 0
+    Q = quantile
+    n = l * l
 
-    for _ in range(n_repetitions):
+    t_fwd_unif = resultats_fwd["uniforme"]["temps"]
+    d_fwd_unif = resultats_fwd["uniforme"]["distances"]
+    t_bwd_unif = resultats_bwd["uniforme"]["temps"]
+    d_bwd_unif = resultats_bwd["uniforme"]["distances"]
 
-        # Deux cases distinctes tirées au hasard
-        while True:
-            x1, y1 = np.random.randint(0, n), np.random.randint(0, n)
-            x2, y2 = np.random.randint(0, n), np.random.randint(0, n)
-            if (x1, y1) != (x2, y2):
-                break
+    # bins communs pour les marginales, coupés au percentile Q
+    all_temps = []
+    for schema in resultats_bwd:
+        if len(resultats_bwd[schema]["temps"]) > 0:
+            all_temps.extend(resultats_bwd[schema]["temps"])
+    for schema in resultats_fwd:
+        if len(resultats_fwd[schema]["temps"]) > 0:
+            all_temps.extend(resultats_fwd[schema]["temps"])
+    t_max = np.percentile(all_temps, Q) if len(all_temps) > 0 else T
+    bins = np.linspace(0, t_max, 50)
+    centres_bins = (bins[:-1] + bins[1:]) / 2
+    largeur_bin = bins[1] - bins[0]
 
-        d0 = distance(x1, y1, x2, y2)
-        coalesce = False
+    # axe distance commun pour toutes les jointes
+    d_max_joint_global = 0.0
+    for schema in ["uniforme", "cercle", "diagonale"]:
+        for res in [resultats_fwd, resultats_bwd]:
+            d = res[schema]["distances"]
+            if len(d) > 0:
+                q = np.percentile(d, Q)
+                if q > d_max_joint_global:
+                    d_max_joint_global = q
+    d_max_joint_global = d_max_joint_global + 0.5
 
-        for t in range(1, T + 1):
-            A, B = paires[np.random.randint(len(paires))]
-            if np.random.rand() < 0.5:
-                A, B = B, A
-
-            # Les deux lignées sont sur A et B : coalescence
-            if (A == (x1, y1) and B == (x2, y2)) or \
-               (A == (x2, y2) and B == (x1, y1)):
-                temps_liste.append(t)
-                distances_liste.append(d0)
-                coalesce = True
-                break
-
-            # Une seule lignée est touchée : elle recule vers B
-            if A == (x1, y1):
-                x1, y1 = B
-            elif A == (x2, y2):
-                x2, y2 = B
-
-        if not coalesce:
-            n_non_coal += 1
-
-    return np.array(temps_liste), np.array(distances_liste), n_non_coal
-
-
-# -----------------------------------------------------------------------------
-# Simulation SURVIE
-# -----------------------------------------------------------------------------
-
-def simuler_survie(n, T, n_simulations):
-    """
-    Estime S(t) et p(t) à partir de l'approche de la première génération.
-
-    Au premier pas de chaque simulation, un nœud B donne deux enfants :
-    un sur B, un sur A. Ce sont les deux lignées qu'on suit.
-    On veut savoir si ces deux lignées ont encore des descendants au
-    présent après t générations.
-
-    S(t) = proportion des simulations où les deux lignées ont toutes
-    les deux au moins un descendant au présent après t pas.
-
-    p(t) = S(t-1) - S(t) : c'est la densité de probabilité que la
-    première perte d'une lignée se produise exactement au pas t.
-    p(t) devrait être en O(1/n^2).
-
-    Comment on sait si une lignée a encore des descendants ?
-    On remonte depuis le présent : si au moins un individu au présent
-    a pour ancêtre la case A (ou B) au pas 0, la lignée A (ou B) est
-    encore vivante.
-
-    Paramètres :
-        n : taille de la grille
-        T : nombre de pas simulés
-        n_simulations : nombre de simulations indépendantes
-
-    Retourne :
-        t_valeurs : array des valeurs de t (1 à T)
-        S : array de S(t) pour chaque t
-        p : array de p(t) = S(t-1) - S(t)
-    """
-    paires = construire_paires_voisins(n)
-
-    # Pour chaque t, on compte combien de simulations ont les deux lignées encore vivantes
-    survie_comptes = np.zeros(T + 1)
-
-    for _ in range(n_simulations):
-
-        # Génération des T événements
-        evenements = []
-        for _ in range(T):
-            A, B = paires[np.random.randint(len(paires))]
-            if np.random.rand() < 0.5:
-                A, B = B, A
-            evenements.append((A, B))
-
-        # Les deux lignées naissent au pas 0 : une sur A0, une sur B0
-        A0, B0 = evenements[0]
-
-        # ancetre_x[x, y] et ancetre_y[x, y] = ancêtre de la case (x, y)
-        # au pas courant qu'on remonte. Au départ (au présent) chaque
-        # case est son propre ancêtre.
-        ancetre_x = np.zeros((n, n), dtype=np.int16)
-        for x in range(n):
-            for y in range(n):
-                ancetre_x[x, y] = x
-                
-        ancetre_y = np.zeros((n, n), dtype=np.int16)
-        for x in range(n):
-            for y in range(n):
-                ancetre_y[x, y] = y
-
-        # On remonte les événements de T-1 vers 0
-        for k in range(T - 1, -1, -1):
-            Ak, Bk = evenements[k]
-            # La case Ak hérite de Bk : son ancêtre devient l'ancêtre de Bk
-            ancetre_x[Ak] = ancetre_x[Bk]
-            ancetre_y[Ak] = ancetre_y[Bk]
-
-            t = T - k  # nombre de générations dans le passé
-
-            # Est-ce qu'au moins un individu au présent descend de A0 ?
-            lignee_A = np.any((ancetre_x == A0[0]) & (ancetre_y == A0[1]))
-            # Est-ce qu'au moins un individu au présent descend de B0 ?
-            lignee_B = np.any((ancetre_x == B0[0]) & (ancetre_y == B0[1]))
-
-            if lignee_A and lignee_B:
-                survie_comptes[t] += 1
-
-    # S(t) = proportion des simulations où les deux survivent jusqu'à t
-    S = survie_comptes[1:] / n_simulations
-
-    # p(t) = S(t-1) - S(t)
-    # S(0) = 1 par définition (les deux lignées viennent juste de naître)
-    S_avec_zero = np.concatenate([[1.0], S])
-    p = S_avec_zero[:-1] - S_avec_zero[1:]
-
-    t_valeurs = np.arange(1, T + 1)
-
-    return t_valeurs, S, p
-
-
-def afficher_survie(t_valeurs, S, p, n, T, afficher, sauvegarder):
-    """
-    Affiche S(t) et p(t).
-
-    Paramètres :
-        t_valeurs : array des valeurs de t
-        S : array de S(t)
-        p : array de p(t)
-        n, T : paramètres de la simulation
-        afficher : bool
-        sauvegarder : bool
-    """
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle(
-        f"Survie des deux lignées sous Moran spatialisé\n"
-        f"(grille {n}x{n}, T={T})",
-        fontsize=13
+    # --- Figure 1 : forward uniforme vs backward uniforme ---
+    fig1, ax1 = plt.subplots(figsize=(9, 5))
+    fig1.suptitle(
+        f"Forward vs backward uniforme - grille {l}x{l} (n={n}), T={T}",
+        fontsize=11
     )
 
-    axes[0].plot(t_valeurs, S, color="steelblue", lw=1.5)
-    axes[0].set_xlabel("t (pas de Moran)")
-    axes[0].set_ylabel("S(t)")
-    axes[0].set_title("Probabilité que les deux lignées survivent jusqu'à t")
-
-    axes[1].plot(t_valeurs, p, color="#D55E00", lw=1.5)
-    axes[1].set_xlabel("t (pas de Moran)")
-    axes[1].set_ylabel("p(t) = S(t-1) - S(t)")
-    axes[1].set_title("p(t) : densité de coalescence forward")
-
-    # Temps moyen estimé
-    somme_p = np.sum(p)
-    t_moyen = np.sum(t_valeurs * p) / somme_p if somme_p > 0 else 0
-    print(f"  Somme de p(t) sur [1, T] : {somme_p:.4f}")
-    print(f"  Temps moyen estimé depuis p(t) : {t_moyen:.1f} pas")
-    print(f"  Référence : n^2 = {n**2},  n^4 = {n**4}")
-
-    plt.tight_layout()
-    if sauvegarder:
-        plt.savefig("moran_survie.png", dpi=150)
-        print("  Graphique sauvegardé : moran_survie.png")
-    if afficher:
-        plt.show()
-    plt.close()
-
-
-# -----------------------------------------------------------------------------
-# Affichage des résultats forward / backward
-# -----------------------------------------------------------------------------
-
-def afficher_resultats(temps_fwd, dist_fwd, temps_bwd, dist_bwd, n, T,
-                        afficher, sauvegarder):
-    """
-    Produit deux graphiques : distributions marginales et densité jointe.
-
-    Le premier graphique compare les distributions du temps et de la
-    distance entre forward et backward, avec les moyennes, écarts-types,
-    et la courbe analytique backward proposée par Stéphane.
-
-    Le deuxième graphique compare les densités jointes (temps, distance)
-    sous forme d'histogrammes 2D. Si les deux approches sont équivalentes,
-    les deux histogrammes doivent se ressembler.
-
-    Paramètres :
-        temps_fwd, dist_fwd : résultats du forward
-        temps_bwd, dist_bwd : résultats du backward
-        n : taille de la grille
-        T : nombre de pas utilisés
-        afficher : bool, affiche les graphiques si True
-        sauvegarder : bool, sauvegarde en .png si True
-    """
-    t_max = max(temps_fwd.max(), temps_bwd.max())
-    d_max = max(dist_fwd.max(), dist_bwd.max())
-    bins_t = np.linspace(0, t_max, 40)
-    bins_d = np.linspace(0, d_max + 0.5, 40)
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    fig.suptitle(
-        f"Moran spatialisé : comparaison forward / backward\n"
-        f"(grille {n}x{n}, T={T})",
-        fontsize=13
-    )
-
-    # Distribution du temps
-    # En forward : âge de l'ancêtre commun
-    # En backward : temps de coalescence
-    axes[0].hist(temps_fwd, bins=bins_t, density=True, alpha=0.6,
-                 color="steelblue", edgecolor="white",
-                 label=f"Forward (n={len(temps_fwd)})")
-    axes[0].hist(temps_bwd, bins=bins_t, density=True, alpha=0.6,
+    if len(t_fwd_unif) > 0:
+        ax1.hist(t_fwd_unif, bins=bins, density=True, alpha=0.5,
                  color="#D55E00", edgecolor="white",
-                 label=f"Backward (n={len(temps_bwd)})")
-    axes[0].axvline(temps_fwd.mean(), color="steelblue", lw=1.5, ls="--",
-                    label=f"moy. forward = {temps_fwd.mean():.0f}")
-    axes[0].axvline(temps_fwd.mean() + temps_fwd.std(), color="steelblue", lw=0.8, ls=":",
-                    label=f"± σ forward = {temps_fwd.std():.0f}")
-    axes[0].axvline(temps_fwd.mean() - temps_fwd.std(), color="steelblue", lw=0.8, ls=":")
-    axes[0].axvline(temps_bwd.mean(), color="#D55E00", lw=1.5, ls="--",
-                    label=f"moy. backward = {temps_bwd.mean():.0f}")
-    axes[0].axvline(temps_bwd.mean() + temps_bwd.std(), color="#D55E00", lw=0.8, ls=":",
-                    label=f"± σ backward = {temps_bwd.std():.0f}")
-    axes[0].axvline(temps_bwd.mean() - temps_bwd.std(), color="#D55E00", lw=0.8, ls=":")
+                 label=f"Forward uniforme (n={len(t_fwd_unif)})")
+        ax1.axvline(t_fwd_unif.mean(), color="#D55E00", lw=1.5, ls="--",
+                    label=f"moy. forward uniforme = {t_fwd_unif.mean():.0f}")
 
-    # Courbe analytique backward : (1 - 1/n^4)^(t-1) * 1/n^4
-    # temps moyen = n^4
-    # Tracée sur un axe Y séparé car les échelles sont incompatibles
-    t_analytique = np.linspace(1, t_max, 10000)
-    p_t_backward = (1 - 1 / n**4) ** (t_analytique - 1) * (1 / n**4)
-    dt = t_analytique[1] - t_analytique[0]
-    p_t_backward = p_t_backward / (p_t_backward.sum() * dt)
+    if len(t_bwd_unif) > 0:
+        ax1.hist(t_bwd_unif, bins=bins, density=True, alpha=0.5,
+                 color="#0072B2", edgecolor="white",
+                 label=f"Backward uniforme (n={len(t_bwd_unif)})")
+        ax1.axvline(t_bwd_unif.mean(), color="#0072B2", lw=1.5, ls="--",
+                    label=f"moy. bwd uniforme = {t_bwd_unif.mean():.0f}")
 
-    ax_twin = axes[0].twinx()
-    ax_twin.plot(t_analytique, p_t_backward, color="darkgreen", lw=1.5, ls="-.",
-                 label=f"$(1 - 1/n^4)^{{t-1}} \\cdot 1/n^4$ (backward)")
-    ax_twin.set_ylabel("Densité analytique", fontsize=8)
-    ax_twin.set_ylim(0, p_t_backward.max() * 1.1)
+    # courbe analytique : p(t) = (1 - m/n^2)^(t-1) * m/n^2
+    p_coal = m / n**2
+    p_t_unif = (1 - p_coal) ** (centres_bins - 1) * p_coal
+    p_t_unif = p_t_unif / (p_t_unif.sum() * largeur_bin)
+    ax1.plot(centres_bins, p_t_unif, color="darkgreen", lw=1.5, ls="-.",
+             label=f"analytique : $m/n^2={p_coal:.2e}$")
 
-    # Fusion des légendes des deux axes en une seule
-    lignes_gauche, labels_gauche = axes[0].get_legend_handles_labels()
-    lignes_droite, labels_droite = ax_twin.get_legend_handles_labels()
-    axes[0].legend(lignes_gauche + lignes_droite,
-                   labels_gauche + labels_droite,
-                   fontsize=8, framealpha=0.5)
+    ax1.legend(fontsize=9, framealpha=0.5)
+    ax1.set_xlabel("Temps (pas de Moran, t=1 = présent)")
+    ax1.set_ylabel("Densité")
 
-    print(f"  Temps moyen analytique backward (1-1/n^4)^t : {n**4} pas")
-    print(f"  Simulations : fwd={temps_fwd.mean():.0f}, bwd={temps_bwd.mean():.0f}")
-
-    axes[0].set_xlabel("Forward : âge de l'ancêtre commun (pas)\n"
-                       "Backward : temps de coalescence (pas)")
-    axes[0].set_ylabel("Densité")
-    axes[0].set_title("Distribution du temps")
-
-    # Distribution de la distance
-    axes[1].hist(dist_fwd, bins=bins_d, density=True, alpha=0.6,
-                 color="steelblue", edgecolor="white",
-                 label=f"Forward (n={len(dist_fwd)})")
-    axes[1].hist(dist_bwd, bins=bins_d, density=True, alpha=0.6,
-                 color="#D55E00", edgecolor="white",
-                 label=f"Backward (n={len(dist_bwd)})")
-    axes[1].axvline(dist_fwd.mean(), color="steelblue", lw=1.5, ls="--",
-                    label=f"moy. forward = {dist_fwd.mean():.1f}")
-    axes[1].axvline(dist_fwd.mean() + dist_fwd.std(), color="steelblue", lw=0.8, ls=":",
-                    label=f"± σ forward = {dist_fwd.std():.1f}")
-    axes[1].axvline(dist_fwd.mean() - dist_fwd.std(), color="steelblue", lw=0.8, ls=":")
-    axes[1].axvline(dist_bwd.mean(), color="#D55E00", lw=1.5, ls="--",
-                    label=f"moy. backward = {dist_bwd.mean():.1f}")
-    axes[1].axvline(dist_bwd.mean() + dist_bwd.std(), color="#D55E00", lw=0.8, ls=":",
-                    label=f"± σ backward = {dist_bwd.std():.1f}")
-    axes[1].axvline(dist_bwd.mean() - dist_bwd.std(), color="#D55E00", lw=0.8, ls=":")
-    axes[1].set_xlabel("Distance euclidienne entre les deux individus au présent")
-    axes[1].set_ylabel("Densité")
-    axes[1].set_title("Distribution de la distance")
-    axes[1].legend(fontsize=8, framealpha=0.5)
+    print(f"  Référence analytique : m/n^2 = {p_coal:.2e} (n={n}, grille {l}x{l})")
+    if len(t_fwd_unif) > 0:
+        print(f"  Forward uniforme : moy = {t_fwd_unif.mean():.1f}, écart-type = {t_fwd_unif.std():.1f}")
+    if len(t_bwd_unif) > 0:
+        print(f"  Bwd uniforme     : moy = {t_bwd_unif.mean():.1f}, écart-type = {t_bwd_unif.std():.1f}")
 
     plt.tight_layout()
     if sauvegarder:
-        plt.savefig("moran_marginal.png", dpi=150)
-        print("  Graphique sauvegardé : moran_marginal.png")
+        nom = f"moran_l{l}_T{T}_uniforme.png"
+        plt.savefig(nom, dpi=150)
+        print(f"  Graphique sauvegardé : {nom}")
     if afficher:
         plt.show()
-    plt.close()
+    plt.close(fig1)
 
-    # Densité jointe
-    fig2, axes2 = plt.subplots(1, 2, figsize=(13, 5))
-    fig2.suptitle(
-        f"Moran spatialisé : densité jointe (temps, distance)\n"
-        f"(grille {n}x{n}, T={T})",
-        fontsize=13
-    )
+    # --- Figure 2 : jointes uniforme ---
+    n_sous_figures = 0
+    if len(t_bwd_unif) > 0 and len(d_bwd_unif) > 0:
+        n_sous_figures = n_sous_figures + 1
+    if len(t_fwd_unif) > 0 and len(d_fwd_unif) > 0:
+        n_sous_figures = n_sous_figures + 1
 
-    h1 = axes2[0].hist2d(temps_fwd, dist_fwd, bins=[bins_t, bins_d],
-                          density=True, cmap="Blues")
-    fig2.colorbar(h1[3], ax=axes2[0], label="Densité")
-    axes2[0].set_xlabel("Âge de l'ancêtre commun (pas)")
-    axes2[0].set_ylabel("Distance entre les deux individus au présent")
-    axes2[0].set_title(f"Forward (n={len(temps_fwd)})")
+    if n_sous_figures > 0:
+        fig2, axes = plt.subplots(1, n_sous_figures, figsize=(6 * n_sous_figures, 5))
+        if n_sous_figures == 1:
+            axes = [axes]
 
-    h2 = axes2[1].hist2d(temps_bwd, dist_bwd, bins=[bins_t, bins_d],
-                          density=True, cmap="Greens")
-    fig2.colorbar(h2[3], ax=axes2[1], label="Densité")
-    axes2[1].set_xlabel("Temps de coalescence (pas)")
-    axes2[1].set_ylabel("Distance entre les deux individus au présent")
-    axes2[1].set_title(f"Backward (n={len(temps_bwd)})")
+        fig2.suptitle(
+            f"Distributions jointes uniforme - grille {l}x{l} (n={n}), T={T}",
+            fontsize=11
+        )
+        idx = 0
 
-    plt.tight_layout()
-    if sauvegarder:
-        plt.savefig("moran_joint.png", dpi=150)
-        print("  Graphique sauvegardé : moran_joint.png")
-    if afficher:
-        plt.show()
-    plt.close()
+        if len(t_bwd_unif) > 0 and len(d_bwd_unif) > 0:
+            ax = axes[idx]
+            idx = idx + 1
+            t_max_joint = np.percentile(t_bwd_unif, Q)
+            bins_t = np.linspace(0, t_max_joint, 40)
+            bins_d = np.linspace(0, d_max_joint_global, 30)
+            ax.hist2d(t_bwd_unif, d_bwd_unif, bins=[bins_t, bins_d],
+                      cmap="Blues", density=True)
+            ax.set_xlabel("Temps de coalescence t")
+            ax.set_ylabel("Distance initiale d0")
+            ax.set_title(f"Backward uniforme (n={len(t_bwd_unif)} points)")
+            ax.axhline(d_bwd_unif.mean(), color="#0072B2", lw=1.2, ls="--",
+                       label=f"moy. d0 = {d_bwd_unif.mean():.2f}")
+            ax.legend(fontsize=8)
+
+        if len(t_fwd_unif) > 0 and len(d_fwd_unif) > 0:
+            ax = axes[idx]
+            t_max_joint = np.percentile(t_fwd_unif, Q)
+            bins_t = np.linspace(0, t_max_joint, 40)
+            bins_d = np.linspace(0, d_max_joint_global, 30)
+            ax.hist2d(t_fwd_unif, d_fwd_unif, bins=[bins_t, bins_d],
+                      cmap="Oranges", density=True)
+            ax.set_xlabel("Temps de divergence t")
+            ax.set_ylabel("Distance entre feuilles (gauche x droite)")
+            ax.set_title(f"Forward uniforme (n={len(t_fwd_unif)} paires)")
+            ax.axhline(d_fwd_unif.mean(), color="#D55E00", lw=1.2, ls="--",
+                       label=f"moy. dist = {d_fwd_unif.mean():.2f}")
+            ax.legend(fontsize=8)
+
+        plt.tight_layout()
+        if sauvegarder:
+            nom = f"moran_l{l}_T{T}_uniforme_joint.png"
+            plt.savefig(nom, dpi=150)
+            print(f"  Graphique sauvegardé : {nom}")
+        if afficher:
+            plt.show()
+        plt.close(fig2)
+
+    # --- Figures 3+ : cercle et diagonale ---
+    for schema in ["cercle", "diagonale"]:
+        t_bwd = resultats_bwd[schema]["temps"]
+        d_bwd = resultats_bwd[schema]["distances"]
+        t_fwd = resultats_fwd[schema]["temps"]
+        d_fwd = resultats_fwd[schema]["distances"]
+
+        if len(t_bwd) == 0 and len(t_fwd) == 0:
+            continue
+
+        facteur = facteurs_norm.get(schema, None)
+        facteur_str = f"{facteur:.3f}" if facteur is not None else "N/A"
+
+        if len(t_bwd) > 0:
+            print(f"  Bwd {schema} : moy = {t_bwd.mean():.1f}, écart-type = {t_bwd.std():.1f}")
+        if len(t_fwd) > 0:
+            print(f"  Fwd {schema} : moy = {t_fwd.mean():.1f}, écart-type = {t_fwd.std():.1f}")
+        print(f"  Facteur de normalisation ({schema}) = {facteur_str}")
+
+        # A : forward schéma vs forward uniforme
+        if len(t_fwd) > 0:
+            fig, ax = plt.subplots(figsize=(9, 5))
+            fig.suptitle(
+                f"Forward {schema} vs forward uniforme - "
+                f"grille {l}x{l} (n={n}), T={T} | norm.={facteur_str}",
+                fontsize=10
+            )
+            if len(t_fwd_unif) > 0:
+                ax.hist(t_fwd_unif, bins=bins, density=True, alpha=0.3,
+                        color="gray", edgecolor="white",
+                        label=f"Forward uniforme (référence, n={len(t_fwd_unif)})")
+                ax.axvline(t_fwd_unif.mean(), color="gray", lw=1.2, ls="--",
+                           label=f"moy. fwd uniforme = {t_fwd_unif.mean():.0f}")
+            ax.hist(t_fwd, bins=bins, density=True, alpha=0.5,
+                    color="#D55E00", edgecolor="white",
+                    label=f"Forward {schema} (n={len(t_fwd)})")
+            ax.axvline(t_fwd.mean(), color="#D55E00", lw=1.5, ls="--",
+                       label=f"moy. fwd {schema} = {t_fwd.mean():.0f}")
+            ax.legend(fontsize=9, framealpha=0.5)
+            ax.set_xlabel("Temps (pas de Moran, t=1 = présent)")
+            ax.set_ylabel("Densité")
+            plt.tight_layout()
+            if sauvegarder:
+                nom = f"moran_l{l}_T{T}_fwd_{schema}.png"
+                plt.savefig(nom, dpi=150)
+                print(f"  Graphique sauvegardé : {nom}")
+            if afficher:
+                plt.show()
+            plt.close(fig)
+
+        # B : backward schéma vs backward uniforme
+        if len(t_bwd) > 0:
+            fig, ax = plt.subplots(figsize=(9, 5))
+            fig.suptitle(
+                f"Backward {schema} vs backward uniforme - "
+                f"grille {l}x{l} (n={n}), T={T}",
+                fontsize=10
+            )
+            if len(t_bwd_unif) > 0:
+                ax.hist(t_bwd_unif, bins=bins, density=True, alpha=0.3,
+                        color="gray", edgecolor="white",
+                        label=f"Backward uniforme (référence, n={len(t_bwd_unif)})")
+                ax.axvline(t_bwd_unif.mean(), color="gray", lw=1.2, ls="--",
+                           label=f"moy. bwd uniforme = {t_bwd_unif.mean():.0f}")
+            ax.hist(t_bwd, bins=bins, density=True, alpha=0.5,
+                    color="#0072B2", edgecolor="white",
+                    label=f"Backward {schema} (n={len(t_bwd)})")
+            ax.axvline(t_bwd.mean(), color="#0072B2", lw=1.5, ls="--",
+                       label=f"moy. bwd {schema} = {t_bwd.mean():.0f}")
+            ax.legend(fontsize=9, framealpha=0.5)
+            ax.set_xlabel("Temps (pas de Moran, t=1 = présent)")
+            ax.set_ylabel("Densité")
+            plt.tight_layout()
+            if sauvegarder:
+                nom = f"moran_l{l}_T{T}_bwd_{schema}.png"
+                plt.savefig(nom, dpi=150)
+                print(f"  Graphique sauvegardé : {nom}")
+            if afficher:
+                plt.show()
+            plt.close(fig)
+
+        # C+D : jointes forward et backward côte à côte
+        if (len(t_fwd) > 0 and len(d_fwd) > 0) or (len(t_bwd) > 0 and len(d_bwd) > 0):
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+            fig.suptitle(
+                f"Distributions jointes {schema} - grille {l}x{l} (n={n}), T={T}",
+                fontsize=10
+            )
+
+            # axe temporel commun aux deux panneaux
+            t_all = []
+            if len(t_fwd) > 0:
+                t_all.extend(t_fwd)
+            if len(t_bwd) > 0:
+                t_all.extend(t_bwd)
+            t_max_joint = np.percentile(t_all, Q)
+            bins_t = np.linspace(0, t_max_joint, 40)
+            bins_d = np.linspace(0, d_max_joint_global, 30)
+
+            ax = axes[0]
+            if len(t_fwd) > 0 and len(d_fwd) > 0:
+                ax.hist2d(t_fwd, d_fwd, bins=[bins_t, bins_d],
+                          cmap="Oranges", density=True)
+                ax.axhline(d_fwd.mean(), color="#D55E00", lw=1.2, ls="--",
+                           label=f"moy. dist = {d_fwd.mean():.2f}")
+                ax.legend(fontsize=8)
+            ax.set_xlabel("Temps de divergence t")
+            ax.set_ylabel("Distance entre feuilles (gauche x droite)")
+            ax.set_title(f"Forward {schema} (n={len(t_fwd)} paires)")
+
+            ax = axes[1]
+            if len(t_bwd) > 0 and len(d_bwd) > 0:
+                ax.hist2d(t_bwd, d_bwd, bins=[bins_t, bins_d],
+                          cmap="Blues", density=True)
+                ax.axhline(d_bwd.mean(), color="#0072B2", lw=1.2, ls="--",
+                           label=f"moy. d0 = {d_bwd.mean():.2f}")
+                ax.legend(fontsize=8)
+            ax.set_xlabel("Temps de coalescence t")
+            ax.set_ylabel("Distance initiale d0")
+            ax.set_title(f"Backward {schema} (n={len(t_bwd)} points)")
+
+            plt.tight_layout()
+            if sauvegarder:
+                nom = f"moran_l{l}_T{T}_{schema}_joint.png"
+                plt.savefig(nom, dpi=150)
+                print(f"  Graphique sauvegardé : {nom}")
+            if afficher:
+                plt.show()
+            plt.close(fig)
 
 
-# -----------------------------------------------------------------------------
-# Lecture des arguments en ligne de commande
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Lecture des arguments
+# =============================================================================
 
 parser = argparse.ArgumentParser(
-    description="Processus de Moran spatialisé : comparaison forward / backward"
+    description="Moran spatialisé : forward puis backward (3 schémas) par répétition"
 )
 
-parser.add_argument("--n", type=int, default=10,
-                    help="Taille de la grille n x n (défaut : 10)")
+parser.add_argument("--l", type=int, default=7,
+                    help="Côté de la grille l x l (défaut : 7), population = l*l")
 
-parser.add_argument("--T", type=int, default=5000,
-                    help="Nombre de pas de Moran simulés (défaut : 5000). "
-                         "Doit être bien plus grand que T_mrca. "
-                         "Utiliser --mode estimer_T pour calibrer.")
+parser.add_argument("--T", type=int, default=None,
+                    help="Nombre de pas de Moran. Si absent, calculé automatiquement.")
 
-parser.add_argument("--rep", type=int, default=1000,
-                    help="Nombre de répétitions (défaut : 1000)")
+parser.add_argument("--m", type=float, default=1.0,
+                    help="Taux de migration (défaut : 1.0)")
+
+parser.add_argument("--rep", type=int, default=200,
+                    help="Nombre de répétitions (défaut : 200)")
 
 parser.add_argument("--mode", type=str, default="compare",
-                    choices=["estimer_T", "compare", "survie"],
-                    help=(
-                        "estimer_T : estime le T_mrca pour la grille choisie. "
-                        "compare   : simule forward et backward et compare (défaut). "
-                        "survie    : estime S(t) et p(t) = S(t-1) - S(t) "
-                        "            depuis la première génération."
-                    ))
+                    choices=["estimer_T", "compare"],
+                    help="estimer_T : estime le T_mrca | compare : simule forward + backward")
+
+parser.add_argument("--sigma", type=float, default=1.0,
+                    help="Écart-type pour le schéma diagonale (défaut : 1.0)")
+
+parser.add_argument("--rayon", type=float, default=None,
+                    help="Rayon pour le schéma cercle (défaut : l/4)")
+
+parser.add_argument("--quantile", type=float, default=99,
+                    help="Percentile pour le crop des histogrammes (défaut : 99)")
 
 parser.add_argument("--afficher", action="store_true",
                     help="Affiche les graphiques à l'écran")
@@ -612,55 +732,117 @@ parser.add_argument("--sauvegarder", action="store_true",
 args = parser.parse_args()
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Lancement
-# -----------------------------------------------------------------------------
+# =============================================================================
 
-paires = construire_paires_voisins(args.n)
-print(f"Grille {args.n}x{args.n}  |  {args.n**2} noeuds  |  "
-      f"{len(paires)} paires voisines  |  T={args.T}  |  mode={args.mode}")
+n = args.l * args.l
+rayon_effectif = args.rayon if args.rayon is not None else args.l / 4.0
 
+if args.T is not None:
+    T = args.T
+else:
+    T = calculer_T(n, args.m)
+    print(f"T calculé automatiquement : T = {T}")
 
-if args.mode == "estimer_T":
-    print(f"\nEstimation de T_mrca sur {args.rep} essais...")
-    t_moy, t_max = estimer_T_mrca(args.n, n_essais=args.rep)
-    print(f"  T_mrca moyen : {t_moy:.0f} pas")
-    print(f"  T_mrca max   : {t_max} pas")
-    print(f"  Pour être sûr, utiliser --T {int(t_max * 200)}")
+print(f"Grille {args.l}x{args.l} | population n={n} | "
+      f"T={T} | m={args.m} | "
+      f"sigma={args.sigma} | rayon={rayon_effectif:.1f}")
+
+print(f"\nSimulation (T={T}, rep={args.rep})...")
+
+# précalcul des cases valides par schéma (une seule fois avant la boucle)
+cases_par_schema = {}
+for schema in ["uniforme", "cercle", "diagonale"]:
+    cases_par_schema[schema] = cases_dans_zone(
+        args.l, schema, sigma=args.sigma, rayon=args.rayon
+    )
+
+temps_fwd_total = {"uniforme": [], "cercle": [], "diagonale": []}
+distances_fwd_total = {"uniforme": [], "cercle": [], "diagonale": []}
+temps_bwd_total = {"uniforme": [], "cercle": [], "diagonale": []}
+distances_bwd_total = {"uniforme": [], "cercle": [], "diagonale": []}
+n_nc_bwd = {"uniforme": 0, "cercle": 0, "diagonale": 0}
+n_zero_fwd = {"uniforme": 0, "cercle": 0, "diagonale": 0}
+n_in_total = {"cercle": 0, "diagonale": 0}
+n_total_norm = {"cercle": 0, "diagonale": 0}
+
+for rep in range(args.rep):
+
+    print(f"  répétition {rep + 1}/{args.rep}...", end="\r", flush=True)
+
+    evenements = generer_evenements(args.l, T, args.m)
+
+    for schema in ["uniforme", "cercle", "diagonale"]:
+        t_fwd, d_fwd, n_paires, n_in, n_total = forward(
+            args.l, T, evenements,
+            schema=schema, sigma=args.sigma, rayon=args.rayon
+        )
+
+        if n_paires == 0:
+            n_zero_fwd[schema] = n_zero_fwd[schema] + 1
+            continue
+
+        temps_fwd_total[schema].extend(t_fwd)
+        distances_fwd_total[schema].extend(d_fwd)
+
+        if schema in n_in_total:
+            n_in_total[schema] = n_in_total[schema] + n_in
+            n_total_norm[schema] = n_total_norm[schema] + n_total
+
+        t_bwd, d_bwd, n_nc = backward(
+            args.l, T, n_paires, evenements,
+            cases_par_schema[schema],
+            schema=schema, sigma=args.sigma, rayon=args.rayon
+        )
+        temps_bwd_total[schema].extend(t_bwd)
+        distances_bwd_total[schema].extend(d_bwd)
+        n_nc_bwd[schema] = n_nc_bwd[schema] + n_nc
+
+# conversion en arrays numpy
+resultats_fwd = {}
+resultats_bwd = {}
+for schema in ["uniforme", "cercle", "diagonale"]:
+    resultats_fwd[schema] = {
+        "temps": np.array(temps_fwd_total[schema]),
+        "distances": np.array(distances_fwd_total[schema])
+    }
+    resultats_bwd[schema] = {
+        "temps": np.array(temps_bwd_total[schema]),
+        "distances": np.array(distances_bwd_total[schema])
+    }
+
+facteurs_norm = {}
+for schema in ["cercle", "diagonale"]:
+    if n_total_norm[schema] > 0:
+        facteurs_norm[schema] = n_in_total[schema] / n_total_norm[schema]
+    else:
+        facteurs_norm[schema] = 0.0
+
+print(f"\nRésultats :")
+for schema in ["uniforme", "cercle", "diagonale"]:
+    t_fwd = resultats_fwd[schema]["temps"]
+    t_bwd = resultats_bwd[schema]["temps"]
+    n_total_bwd = len(t_bwd) + n_nc_bwd[schema]
+    taux_nc = n_nc_bwd[schema] / n_total_bwd * 100 if n_total_bwd > 0 else 0
+    msg_nc = " -- augmenter T !" if taux_nc > 5 else ""
+    print(f"  [{schema}] fwd={len(t_fwd)} paires | "
+          f"bwd={len(t_bwd)} coal. ({taux_nc:.1f}% non coal.{msg_nc}) | "
+          f"rep sans paires : {n_zero_fwd[schema]}")
+
+for schema in ["cercle", "diagonale"]:
+    print(f"  Facteur normalisation {schema} = {facteurs_norm[schema]:.3f} "
+          f"({n_in_total[schema]} in / {n_total_norm[schema]} total)")
+
+if len(resultats_fwd["uniforme"]["temps"]) == 0:
+    print("\nAucun résultat à afficher. Augmenter T.")
     sys.exit(0)
 
-
-if args.mode == "compare":
-    print(f"\nSimulation forward (T={args.T}, rep={args.rep})...")
-    t_fwd, d_fwd, n_nc_fwd = simuler_forward(args.n, args.T, args.rep)
-    taux_nc = n_nc_fwd / args.rep * 100
-    print(f"  Ancêtre commun trouvé : {len(t_fwd)} / {args.rep}  "
-          f"({n_nc_fwd} non trouvés, soit {taux_nc:.1f}%"
-          f"{' -- augmenter T !' if taux_nc > 5 else ''})")
-    if len(t_fwd) > 0:
-        print(f"  Âge moyen de l'ancêtre commun : {t_fwd.mean():.1f} +/- {t_fwd.std():.1f} pas")
-        print(f"  Distance moy. au présent      : {d_fwd.mean():.2f} +/- {d_fwd.std():.2f}")
-
-    print(f"\nSimulation backward (T={args.T}, rep={args.rep})...")
-    t_bwd, d_bwd, n_nc_bwd = simuler_backward(args.n, args.T, args.rep)
-    taux_nc = n_nc_bwd / args.rep * 100
-    print(f"  Coalescences trouvées : {len(t_bwd)} / {args.rep}  "
-          f"({n_nc_bwd} non coalescées, soit {taux_nc:.1f}%"
-          f"{' -- augmenter T !' if taux_nc > 5 else ''})")
-    if len(t_bwd) > 0:
-        print(f"  Temps de coalescence moyen : {t_bwd.mean():.1f} +/- {t_bwd.std():.1f} pas")
-        print(f"  Distance moy. au présent   : {d_bwd.mean():.2f} +/- {d_bwd.std():.2f}")
-
-    if len(t_fwd) == 0 or len(t_bwd) == 0:
-        print("\nPas assez de coalescences pour comparer. Augmenter T.")
-    else:
-        afficher_resultats(t_fwd, d_fwd, t_bwd, d_bwd,
-                           args.n, args.T,
-                           args.afficher, args.sauvegarder)
-
-
-if args.mode == "survie":
-    print(f"\nSimulation survie (T={args.T}, rep={args.rep})...")
-    t_valeurs, S, p = simuler_survie(args.n, args.T, args.rep)
-    afficher_survie(t_valeurs, S, p, args.n, args.T,
-                    args.afficher, args.sauvegarder)
+# resultats_fwd et resultats_bwd sont le tableau principal.
+# La colonne proba_analytique sera ajoutée ici plus tard.
+afficher_resultats(
+    resultats_fwd, resultats_bwd, facteurs_norm,
+    args.l, T, args.m, args.quantile,
+    args.afficher, args.sauvegarder,
+    sigma=args.sigma, rayon=args.rayon
+)
