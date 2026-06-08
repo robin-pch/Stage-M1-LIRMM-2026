@@ -103,6 +103,37 @@ python src/moran_spatialise.py --l 7 --T 50000 --rep 200 --sauvegarder
 | `--afficher`    | Affiche les graphiques à l'écran                  | -      |
 | `--sauvegarder` | Sauvegarde les graphiques en `.png`               | -      |
 
+---
+
+### `src/moran_lignee_unique.py` : Diffusion d'une lignée unique
+
+Même processus de Moran que `moran_spatialise.py`, mais on ne suit qu'une seule
+lignée depuis un point de départ `(x0, y0)` (centre de la grille par défaut).
+On construit le même arbre forward, puis on tire une feuille vivante au hasard
+parmi les descendants de `(x0, y0)` au temps T. Si la lignée s'est fait écraser,
+la répétition est comptée comme éteinte.
+
+On compare la distribution des positions obtenues avec la formule analytique
+de la marche aléatoire 2D. La formule reçoit `t = T/n`.
+
+```bash
+python src/moran_lignee_unique.py --l 10 --T 500 --rep 3000 --m 0.5 --afficher
+python src/moran_lignee_unique.py --l 10 --T 500 --rep 3000 --m 0.5 --sauvegarder
+python src/moran_lignee_unique.py --l 10 --T 500 --m 0.5 --analytique_3d --afficher
+```
+
+| Option             | Description                                           | Défaut |
+|--------------------|-------------------------------------------------------|--------|
+| `--l`              | Côté de la grille (population = l*l)                  | `7`    |
+| `--T`              | Nombre de pas. Si absent, calculé automatiquement     | -      |
+| `--m`              | Taux de migration                                     | `1.0`  |
+| `--rep`            | Nombre de répétitions                                 | `500`  |
+| `--x0`             | Coordonnée x du point de départ                       | centre |
+| `--y0`             | Coordonnée y du point de départ                       | centre |
+| `--afficher`       | Affiche les graphiques à l'écran                      | -      |
+| `--sauvegarder`    | Sauvegarde les graphiques en `.png`                   | -      |
+| `--analytique_3d`  | Affiche uniquement la surface 3D analytique           | -      |
+
 ## Dépendances
 
 ```bash
