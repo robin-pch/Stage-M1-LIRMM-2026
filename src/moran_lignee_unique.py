@@ -46,6 +46,7 @@ import matplotlib.pyplot as plt
 from collections import Counter
 import argparse
 import sys
+from math import comb
 
 
 # =============================================================================
@@ -322,6 +323,27 @@ def heatmap_analytique(xy0, m, l, t):
             h[x1, y1] = proba_transition_analytique(xy0, (x1, y1), m, l, t)
     return h
 
+def heatmap_analytique_melange(xy0, m, l, T):
+    """
+    Mélange analytique tenant compte du fait que
+    la lignée est affectée un nombre aléatoire de fois.
+    """
+
+    n = l * l
+    p = 1.0 / n
+
+    h = np.zeros((l, l))
+
+    for k in range(T + 1):
+
+        poids = comb(T, k) * (p ** k) * ((1 - p) ** (T - k))
+
+        if poids < 1e-12:
+            continue
+
+        h += poids * heatmap_analytique(xy0, m, l, k)
+
+    return h
 
 def distribution_analytique_distance(xy0, m, l, t):
     """
@@ -344,6 +366,19 @@ def distribution_analytique_distance(xy0, m, l, t):
     p_vals = np.array([prob_par_dist[d] for d in d_vals])
     return d_vals, p_vals
 
+def distribution_nombre_pas(l, T):
+
+    n = l * l
+    p = 1.0 / n
+
+    k_vals = np.arange(T + 1)
+
+    p_vals = np.array([
+        comb(T, k) * (p ** k) * ((1 - p) ** (T - k))
+        for k in k_vals
+    ])
+
+    return k_vals, p_vals
 
 # =============================================================================
 # Simulation principale
@@ -415,7 +450,7 @@ def afficher_resultats(positions, x0, y0, m, l, T, n, rep, n_eteintes,
     heatmap_sim = heatmap_sim / len(positions)
 
     # heatmap analytique (t = T/n) — calculée ici pour connaître le vmax commun
-    h_ana = heatmap_analytique((x0, y0), m, l, t_ana)
+    h_ana = heatmap_analytique_melange((x0, y0), m, l, T)
 
     # vmax commun pour que les deux couleurs soient comparables
     vmax_commun = max(heatmap_sim.max(), h_ana.max())
@@ -563,6 +598,30 @@ def afficher_resultats(positions, x0, y0, m, l, T, n, rep, n_eteintes,
         print(f"  Sauvegardé : {nom}")
     if afficher:
         plt.show()
+    plt.close(fig)
+
+        # --- Figure : distribution du nombre de pas ---
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    k_vals, p_vals = distribution_nombre_pas(l, T)
+
+    ax.bar(k_vals, p_vals)
+    ax.set_xlim(0, 20)
+
+    ax.set_xlabel("Nombre de fois où la lignée est affectée")
+    ax.set_ylabel("Probabilité")
+    ax.set_title("Distribution analytique du nombre de pas")
+
+    plt.tight_layout()
+
+    if sauvegarder:
+        nom = f"lignee_unique_l{l}_T{T}_m{m:.2f}_nb_pas.png"
+        plt.savefig(nom, dpi=150)
+
+    if afficher:
+        plt.show()
+
     plt.close(fig)
 
 
