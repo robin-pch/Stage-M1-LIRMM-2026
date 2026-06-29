@@ -123,7 +123,7 @@ python src/moran_lignee_unique.py --l 10 --T 500 --m 0.5 --analytique_3d --affic
 ```
 
 | Option             | Description                                           | Défaut |
-|--------------------|-------------------------------------------------------|--------|
+|---------------------|----------------------------------------------------------|--------|
 | `--l`              | Côté de la grille (population = l*l)                  | `7`    |
 | `--T`              | Nombre de pas. Si absent, calculé automatiquement     | -      |
 | `--m`              | Taux de migration                                     | `1.0`  |
@@ -133,6 +133,139 @@ python src/moran_lignee_unique.py --l 10 --T 500 --m 0.5 --analytique_3d --affic
 | `--afficher`       | Affiche les graphiques à l'écran                      | -      |
 | `--sauvegarder`    | Sauvegarde les graphiques en `.png`                   | -      |
 | `--analytique_3d`  | Affiche uniquement la surface 3D analytique           | -      |
+
+---
+
+### `src/verif_approximation.py` : Vérification de l'approximation tau = T·m/n
+
+Pour une lignée unique, vérifie qu'on peut remplacer le mélange (nombre
+aléatoire de déplacements) par un seul nombre de déplacements moyen
+`tau = T*m/n`. Compare trois approches analytiques : `simple` (un seul tau),
+`melange` (moyenne pondérée sur tous les tau possibles, loi binomiale) et
+`exp` (formule à temps continu). Affiche les heatmaps des trois approches,
+la distribution de distance au départ, et la probabilité de transition en
+fonction du temps.
+
+```bash
+python src/verif_approximation.py --l 7 --T 5000 --m 1.0 --afficher
+```
+
+| Option          | Description                                          | Défaut |
+|-----------------|---------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)                  | `7`    |
+| `--T`           | Temps de Moran                                        | `5000` |
+| `--m`           | Taux de migration                                     | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                        | `1.0`  |
+| `--r_max`       | Nombre de pas max pour le graphe proba/temps           | `40`   |
+| `--afficher`    | Affiche les graphiques à l'écran                      | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                   | -      |
+
+---
+
+### `src/tableau_joint.py` : Tableau joint des deux lignées
+
+Calcule la probabilité jointe analytique `P(z1, z2 | t)` que deux lignées
+issues d'un même ancêtre se retrouvent en `z1` et `z2`, pour un temps total
+`t` donné (formule à temps continu). Le temps total `T` est coupé en
+plusieurs tranches égales, et le tableau exporté contient une colonne de
+probabilité par tranche de temps. Sert de référence analytique à comparer
+aux simulations forward.
+
+```bash
+python src/tableau_joint.py --l 7 --T 50 --n_t 5 --m 1.0 --sauvegarder
+```
+
+| Option          | Description                                          | Défaut |
+|-----------------|---------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)                  | `7`    |
+| `--T`           | Temps total (calendaire)                               | `50.0` |
+| `--n_t`         | Nombre de temps (coupes de T)                          | `5`    |
+| `--m`           | Taux de migration                                     | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                        | `1.0`  |
+| `--afficher`    | Affiche la figure                                     | -      |
+| `--sauvegarder` | Sauvegarde la figure et le csv                        | -      |
+
+---
+
+### `src/comparaison_analytique.py` : P(distance) simulation vs analytique
+
+Compare la distribution `P(distance)` obtenue par simulation forward avec
+deux versions analytiques : sans correction (`proba_transition_exp`,
+distance nulle incluse) et avec correction (`proba_transition_exp_cond`,
+distance nulle mise à zéro puis renormalisée). Un density plot (KDE) par
+tranche de temps, simulation et analytique superposées.
+
+```bash
+python src/comparaison_analytique.py --l 7 --rep 200 --afficher
+python src/comparaison_analytique.py --l 7 --rep 200 --sauvegarder --seed 42
+```
+
+| Option          | Description                                                  | Défaut |
+|-----------------|------------------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)                          | `7`    |
+| `--T`           | Nombre de pas. Si absent, calculé automatiquement              | -      |
+| `--m`           | Taux de migration                                              | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                                | `1.0`  |
+| `--rep`         | Nombre de répétitions                                          | `200`  |
+| `--n_tirages`   | Nb de valeurs tirées dans l'analytique pour le KDE              | `2000` |
+| `--n_temps`     | Nb de tranches de temps pour le tableau analytique              | `50`   |
+| `--afficher`    | Affiche les graphiques                                         | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                            | -      |
+| `--seed`        | Graine pour reproductibilité                                   | -      |
+
+---
+
+### `src/comparaison_pt_selon_m.py` : Densité du temps de coalescence selon m
+
+Pour plusieurs valeurs de `m`, compare l'histogramme du temps de
+coalescence simulé (toutes distances confondues) à la densité théorique
+`densite_temps_coalescence`. Un sous-graphique par `m`, tous avec le même
+`T` pour rester comparables entre eux.
+
+```bash
+python src/comparaison_pt_selon_m.py --l 7 --T 57491 --rep 100
+python src/comparaison_pt_selon_m.py --l 7 --T 57491 --rep 100 --m_liste 1.0 0.5 0.1 0.05
+```
+
+| Option             | Description                                                       | Défaut                 |
+|---------------------|------------------------------------------------------------------------|-------------------------|
+| `--l`              | Côté de la grille (population = l*l)                                | `7`                     |
+| `--T`              | Nombre de pas de Moran, le même pour tous les m                     | `60000`                 |
+| `--lam`            | lambda = 1/temps de génération                                      | `1.0`                   |
+| `--rep`            | Nombre de répétitions par m                                          | `100`                   |
+| `--m_liste`        | Liste des m à tester                                                 | `1.0 0.5 0.1 0.05`      |
+| `--t_max_affiche`  | Largeur de l'axe X (temps calendaire). Si absent, calculé automatiquement | -                  |
+| `--sauvegarder`    | Sauvegarde le graphique en `.png`                                    | -                       |
+| `--seed`           | Graine pour reproductibilité                                         | -                       |
+
+---
+
+### `src/comparaison_temps_calendaire.py` : Moran vs marche aléatoire en temps calendaire
+
+À distance de départ fixée, compare le temps de coalescence en temps
+calendaire entre le processus de Moran (`generer_evenements` +
+`forward_uniforme`, comme dans `comparaison_analytique.py`) et une marche
+aléatoire à deux lignées (une des deux bouge à chaque tour, temps cumulé
+via une loi exponentielle de paramètre `lam`). Un sous-graphique par
+distance testée.
+
+```bash
+python src/comparaison_temps_calendaire.py --l 7 --rep 500 --afficher
+python src/comparaison_temps_calendaire.py --l 7 --distances 1 2 4 6 --rep 500 --sauvegarder
+```
+
+| Option           | Description                                                          | Défaut    |
+|-------------------|---------------------------------------------------------------------------|-----------|
+| `--l`            | Côté de la grille (population Moran = l*l)                              | `7`       |
+| `--m`            | Taux de migration                                                       | `1.0`     |
+| `--lam`          | lambda = 1/temps de génération                                          | `1.0`     |
+| `--distances`    | Liste des distances d0 à comparer. Si absent, calculé automatiquement     | -         |
+| `--rep`          | Nombre de répétitions du forward Moran                                   | `500`     |
+| `--rep_marche`   | Nombre de simulations marche aléatoire                                   | `20000`   |
+| `--T`            | Nombre de pas de Moran. Si absent, calculé automatiquement                | -         |
+| `--afficher`     | Affiche les graphiques                                                   | -         |
+| `--sauvegarder`  | Sauvegarde les graphiques en `.png`                                      | -         |
+| `--seed`         | Graine pour reproductibilité                                             | -         |
 
 ## Dépendances
 
