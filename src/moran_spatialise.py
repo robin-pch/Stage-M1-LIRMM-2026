@@ -9,7 +9,7 @@
 #
 # On simule un processus de Moran spatialisé sur une grille l x l
 # (population n = l*l). À chaque pas, on tire B au hasard sur la grille.
-# B se propage sur A : B écrase A. La destination A est choisie avec
+# B se propage sur A : B écrase A. La destinatioan A est choisie avec
 # probabilité m/4 par direction disponible, et 1 - k*m/4 de rester sur
 # place (k = nb de voisins de B : 4 au centre, 3 sur un bord, 2 en angle).
 # Les événements "rester sur place" (A = B) sont enregistrés comme les
@@ -95,33 +95,39 @@ class Noeud:
 # Fonctions utilitaires
 # =============================================================================
 
+
 def generer_evenements(l, T, m):
     """
     Génère exactement T événements Moran.
 
-    Les tirages aléatoires sont pré-générés en avance par blocs (plus rapide
-    que T appels numpy individuels). Les événements "rester sur place" (A = B)
-    sont inclus : ils comptent comme un pas de temps où rien ne se passe.
+    Schéma :
+      - on choisit uniformément B parmi les n = l*l cases
+      - si B a k voisins :
+            u ~ U(0,1)
+            si !(u > k*m/4) : migration vers un voisin choisi uniformément
+            sinon           : A = B (pas de migration)
 
     Retourne une liste de T tuples ((xA, yA), (xB, yB)).
     """
+    n = l * l
     evenements = []
-    # On tire 4*T valeurs d'un coup comme marge, au cas où beaucoup tombent
-    # sur "rester sur place"
-    indices_B = np.random.randint(0, l * l, size=T * 4)
-    tirages_r = np.random.rand(T * 4)
+
+    indices_B = np.random.randint(0, n, size=2 * T)
+    tirages_u = np.random.rand(2 * T)
+
     i = 0
 
     while len(evenements) < T:
+
         if i >= len(indices_B):
-            # si par malchance la marge n'était pas suffisante, on régénère
-            indices_B = np.random.randint(0, l * l, size=T)
-            tirages_r = np.random.rand(T)
+            indices_B = np.random.randint(0, n, size=T)
+            tirages_u = np.random.rand(T)
             i = 0
 
-        xB, yB = indices_B[i] // l, indices_B[i] % l
+        xB, yB = divmod(indices_B[i], l)
 
         voisins = []
+
         if xB > 0:
             voisins.append((xB - 1, yB))
         if xB < l - 1:
@@ -132,19 +138,18 @@ def generer_evenements(l, T, m):
             voisins.append((xB, yB + 1))
 
         k = len(voisins)
-        p_rester = 1.0 - k * m / 4.0
-        r = tirages_r[i]
-        i = i + 1
+        u = tirages_u[i]
+        i += 1
 
-        if r < p_rester:
-            xA, yA = xB, yB  # rester sur place : A = B
+        if not (u > k * m / 4):
+            xA, yA = voisins[np.random.randint(k)]
         else:
-            idx_voisin = int((r - p_rester) / (m / 4.0))
-            idx_voisin = min(idx_voisin, k - 1)
-            xA, yA = voisins[idx_voisin]
+            xA, yA = xB, yB
+
         evenements.append(((xA, yA), (xB, yB)))
 
     return evenements
+
 
 
 def distance(x1, y1, x2, y2):
@@ -538,6 +543,7 @@ def afficher_resultats(resultats_fwd, resultats_bwd, facteurs_norm,
 
         if len(t_fwd_unif) > 0 and len(d_fwd_unif) > 0:
             ax = axes[idx]
+            idx = idx + 1
             t_max_joint = np.percentile(t_fwd_unif, Q)
             bins_t = np.linspace(0, t_max_joint, 40)
             bins_d = np.linspace(0, d_max_joint_global, 30)
@@ -729,6 +735,9 @@ parser.add_argument("--afficher", action="store_true",
 parser.add_argument("--sauvegarder", action="store_true",
                     help="Sauvegarde les graphiques en .png")
 
+parser.add_argument("--seed", type=int, default=None,
+                    help="Graine pour le générateur aléatoire (défaut : aléatoire)")
+
 args = parser.parse_args()
 
 
@@ -750,6 +759,10 @@ print(f"Grille {args.l}x{args.l} | population n={n} | "
       f"sigma={args.sigma} | rayon={rayon_effectif:.1f}")
 
 print(f"\nSimulation (T={T}, rep={args.rep})...")
+
+if args.seed is not None:
+    np.random.seed(args.seed)
+    print(f"Graine fixée : {args.seed}")
 
 # précalcul des cases valides par schéma (une seule fois avant la boucle)
 cases_par_schema = {}
@@ -839,7 +852,6 @@ if len(resultats_fwd["uniforme"]["temps"]) == 0:
     sys.exit(0)
 
 # resultats_fwd et resultats_bwd sont le tableau principal.
-# La colonne proba_analytique sera ajoutée ici plus tard.
 afficher_resultats(
     resultats_fwd, resultats_bwd, facteurs_norm,
     args.l, T, args.m, args.quantile,
