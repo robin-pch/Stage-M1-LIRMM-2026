@@ -162,10 +162,12 @@ def forward_uniforme(l, T, evenements):
 
 def densite_temps_coalescence(t, n, m, lam):
     """
-    Densite exponentielle du temps de coalescence. m n'apparait plus dans la formule : le temps
-    de coalescence calendaire ne depend pas de m.
+    Densite exponentielle du temps de coalescence (formule corrigee par
+    Stephane, mail du 02/07). La conversion cycles -> temps calendaire ne
+    depend pas de m, mais la densite si : la proba de coalescer a un cycle
+    donne est m/n^2, donc m revient dans le parametre de l'exponentielle.
     """
-    parametre = lam / n
+    parametre = m * lam / n
     return parametre * np.exp(-parametre * t)
 
 
@@ -214,11 +216,14 @@ T = args.T
 if args.t_max_affiche is not None:
     t_max_affiche = args.t_max_affiche
 else:
-    # 2 fois la moyenne theorique (n/lam), pour s'adapter automatiquement
-    # a la taille de grille : sinon un axe fixe en dur coupe la courbe
-    # trop court pour les grandes grilles (n plus grand -> distribution
-    # plus etalee)
-    t_max_affiche = 2 * n / args.lam
+    # 2 fois la moyenne theorique (n / (m*lam)), pour s'adapter automatiquement
+    # a la taille de grille et a m : sinon un axe fixe en dur coupe la courbe
+    # trop court pour les grandes grilles ou les petits m (distribution plus
+    # etalee, cf. densite_temps_coalescence corrigee du 02/07). On prend le
+    # plus petit m de la liste car c'est lui qui donne la moyenne la plus
+    # grande, donc l'axe le plus large.
+    m_min = min(args.m_liste)
+    t_max_affiche = 2 * n / (m_min * args.lam)
 
 print(f"Grille {args.l}x{args.l} | n={n} | T={T} (fixe pour tous les m) | lam={args.lam}")
 print(f"Axe X (temps) fixe a {t_max_affiche:.1f} pour tous les sous-graphiques")
@@ -244,8 +249,8 @@ for ax, m in zip(axes, args.m_liste):
     t_moran = np.array(t_total)
     print(f"\n  {len(t_moran)} paires au total")
 
-    # conversion en temps calendaire (sans facteur 2, cf. correction du 26/06)
-    t_cal = t_moran * m / (n * args.lam)
+    # conversion en temps calendaire (sans facteur 2 ni m, cf. correction du 26/06 puis 02/07)
+    t_cal = t_moran / (n * args.lam)
 
     # axe X fixe, la meme valeur pour tous les sous-graphiques (meme l,
     # meme T, peu importe m) : comme ca on voit vraiment si la courbe

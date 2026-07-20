@@ -330,7 +330,7 @@ def heatmap_analytique_melange(xy0, m, l, T):
     """
 
     n = l * l
-    p = 1.0 / n
+    p = m / n
 
     h = np.zeros((l, l))
 
@@ -366,10 +366,9 @@ def distribution_analytique_distance(xy0, m, l, t):
     p_vals = np.array([prob_par_dist[d] for d in d_vals])
     return d_vals, p_vals
 
-def distribution_nombre_pas(l, T):
-
+def distribution_nombre_pas(l, m, T):
     n = l * l
-    p = 1.0 / n
+    p = m / n
 
     k_vals = np.arange(T + 1)
 
@@ -604,7 +603,7 @@ def afficher_resultats(positions, x0, y0, m, l, T, n, rep, n_eteintes,
 
     fig, ax = plt.subplots(figsize=(6, 4))
 
-    k_vals, p_vals = distribution_nombre_pas(l, T)
+    k_vals, p_vals = distribution_nombre_pas(l, m, T)
 
     ax.bar(k_vals, p_vals)
     ax.set_xlim(0, 20)

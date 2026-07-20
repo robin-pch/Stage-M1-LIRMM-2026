@@ -244,7 +244,7 @@ def forward_uniforme(l, T, evenements):
                         temps_liste.append(noeud.temps)
                         distances_liste.append(d)
 
-    # on remet le temps "a l'envers" : t=1 correspond au dernier evenement
+    # conversion en "pas avant le présent" : t=1 = dernier événement
     temps_array = np.array(temps_liste)
     distances_array = np.array(distances_liste)
     if len(temps_array) > 0:
@@ -309,7 +309,7 @@ def densite_temps_coalescence(t, n, m, lam):
     """
     Densite exponentielle du temps de coalescence en temps calendaire.
     """
-    parametre = lam / n
+    parametre = m * lam / n
     return parametre * np.exp(-parametre * t)
 
 
@@ -435,7 +435,7 @@ def figure_distance(t_fwd, d_fwd, d_vals, Z_brute, Z_cond,
     )
 
     n = l * l
-    t_fwd_cal = t_fwd * m / (n * lam)
+    t_fwd_cal = t_fwd / (n * lam)
 
     print("\nErreurs quadratiques (comparaison avec simulation) :")
     for k, i in enumerate(bins_retenus):
@@ -506,7 +506,7 @@ def preparer_tirages(t_fwd, d_fwd, d_vals, Z_brute, Z_cond, p_temps,
     Retourne les tableaux (t, d) pour simulation, brute et cond.
     """
     n = l * l
-    t_fwd_cal = t_fwd * m / (n * lam)
+    t_fwd_cal = t_fwd / (n * lam)
 
     t_tire_brute = []
     d_tire_brute = []
@@ -669,7 +669,7 @@ def figure_heatmap(t_fwd, d_fwd, d_vals, Z_brute, Z_cond,
     On garde seulement les 3/4 de la plage de temps.
     """
     n = l * l
-    t_fwd_cal = t_fwd * m / (n * lam)
+    t_fwd_cal = t_fwd / (n * lam)
 
     d_max_int = int(d_vals.max()) + 1
     bins_d = np.arange(0, d_max_int + 1, 1)  # commence a 0 : d=0 inclus
@@ -741,10 +741,10 @@ def afficher_comparaison(t_fwd, d_fwd, l, T, m, lam, n_tirages, n_temps,
     """Lance les figures."""
     n = l * l
 
-    t_fwd_cal = t_fwd * m / (n * lam)
+    t_fwd_cal = t_fwd / (n * lam)
 
     temps_moran = np.array([T * k / n_temps for k in range(1, n_temps + 1)])
-    temps_cal = temps_moran * m / (n * lam)
+    temps_cal = temps_moran / (n * lam)
 
     bins_t = np.linspace(0, temps_cal.max(), n_temps + 1)
     centres_t = (bins_t[:-1] + bins_t[1:]) / 2

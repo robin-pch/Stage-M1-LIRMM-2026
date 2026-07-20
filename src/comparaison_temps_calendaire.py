@@ -1,23 +1,43 @@
 # -*- coding: utf-8 -*-
-# Compare le temps de coalescence en temps calendaire entre Moran et une
-# marche aleatoire, a distance de depart fixee.
+# ----------------------------------------------------------------------
+# Comparaison Moran vs marche aleatoire en temps calendaire, a distance fixe
+# ----------------------------------------------------------------------
+# Auteur : Robin Pioch
+# Stage M1 Bioinformatique, Universite de Montpellier
+# Encadrant : Stephane Guindon (LIRMM)
+# Juin 2026
 #
-# Moran : on reprend generer_evenements et forward_uniforme tels quels
-# (comparaison_analytique.py), qui donnent un tableau de toutes les paires
-# (z1, z2, t, d). On filtre par distance d0, puis conversion calendaire :
-#   t_cal = 2 * t_fwd * m / (n * lam)
-# Facteur 2 car les deux lignees diffusent chacune (meme principe que
-# proba_transition_exp).
+# Suite aux retours de Stephane : pour Moran on ne change rien a ce qui
+# existe deja dans comparaison_analytique.py. On utilise generer_evenements
+# et forward_uniforme tels quels, qui donnent directement un grand tableau
+# de toutes les paires (z1, z2, t, d) sur toutes les repetitions. On filtre
+# ensuite ce tableau pour ne garder que les distances d0 voulues, et on
+# convertit le temps en calendaire avec la formule deja en place :
+#   t_cal = 2 * t_fwd / (n * lam)
 #
-# Marche aleatoire (une lignee tiree sur deux a chaque tour) : un temps dt
-# tire dans une expo de parametre lam, une lignee tiree au hasard (proba
-# 0.5), elle se deplace comme dans generer_evenements (proba k*m/4 par
-# voisin, sinon reste sur place). On cumule les dt jusqu'a coalescence.
-# Ce temps cumule est deja en calendaire, pas de conversion supplementaire.
+# Pour la marche aleatoire, methode demandee par Robin (une lignee tiree
+# sur deux) : a chaque tour, un temps dt est tire dans une loi exponentielle
+# de parametre lam, une des deux lignees est tiree (proba 0.5), et elle se
+# deplace avec la meme regle que generer_evenements (proba k*m/4 par voisin
+# valide, sinon reste sur place). On cumule les dt jusqu'a coalescence.
+# Ce temps cumule est DEJA en calendaire : aucune conversion supplementaire
+# n'est appliquee ici, contrairement a Moran.
 #
 # Usage :
 #   python comparaison_temps_calendaire.py --l 7 --rep 500 --afficher
 #   python comparaison_temps_calendaire.py --l 7 --distances 1 2 4 6 --rep 500 --sauvegarder
+#
+# Options :
+#   --l          : cote de la grille (defaut : 7), population Moran = l*l
+#   --m          : taux de migration (defaut : 1.0)
+#   --lam        : lambda = 1/temps de generation (defaut : 1.0)
+#   --distances  : liste des distances d0 a comparer (defaut : 1 2 4 6)
+#   --rep        : nombre de repetitions par distance (defaut : 500)
+#   --T          : nombre de pas de Moran. Si absent, calcule automatiquement.
+#   --afficher   : affiche les graphiques
+#   --sauvegarder: sauvegarde les graphiques en .png
+#   --seed       : graine pour reproductibilite
+# ----------------------------------------------------------------------
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,7 +46,7 @@ import sys
 
 
 # =============================================================================
-# Partie Moran (reprise de comparaison_analytique.py)
+# Partie Moran (reprise integrale de comparaison_analytique.py, rien ne change)
 # =============================================================================
 
 class Noeud:
@@ -206,7 +226,12 @@ def forward_uniforme(l, T, evenements):
 # =============================================================================
 
 def deplacer_lignee(x, y, m, l):
-    """Deplace une lignee d'un pas : proba k*m/4 par voisin valide, sinon reste sur place."""
+    """
+    Deplace une lignee d'un pas, avec la meme convention que dans
+    generer_evenements : probabilite k*m/4 de se deplacer vers chaque
+    voisin valide, et probabilite 1 - k*m/4 de rester sur place (k = nombre
+    de voisins valides : 4 au centre, 3 sur un bord, 2 en angle).
+    """
     voisins = []
     if x > 0:
         voisins.append((x - 1, y))
@@ -231,16 +256,27 @@ def deplacer_lignee(x, y, m, l):
 
 def backward_marche_aleatoire(l, m, lam, t_max):
     """
-    Coalescence backward de deux lignees, une lignee tiree sur deux a chaque
-    tour. Les deux lignees partent au hasard sur la grille. A chaque tour :
-    dt tire dans une expo(lam), une lignee tiree au hasard (proba 0.5), elle
-    se deplace avec deplacer_lignee. On cumule jusqu'a coalescence.
+    Simule la coalescence backward de deux lignees, methode "une lignee
+    tiree sur deux" demandee par Robin :
 
-    Le temps cumule est deja calendaire, pas de conversion a faire ensuite.
-    t_max evite une boucle infinie.
+    Les deux lignees partent chacune d'une case tiree au hasard sur toute
+    la grille (comme le forward de Moran, qui couvre aussi toute la grille
+    de facon uniforme). A chaque tour :
+      - on tire un temps dt dans une loi exponentielle de parametre lam
+      - on tire au hasard laquelle des deux lignees est concernee
+        (probabilite 0.5 chacune)
+      - cette lignee se deplace (ou reste sur place) avec deplacer_lignee
+    On cumule les dt jusqu'a coalescence.
 
-    Renvoie (temps_calendaire, distance_depart), ou (None, None) si pas
-    coalesce avant t_max.
+    Important : ce temps cumule EST DEJA en calendaire (loi exponentielle de
+    parametre lam directement), il n'y a aucune conversion a faire apres,
+    contrairement a Moran.
+
+    t_max est une limite de securite pour eviter une boucle infinie.
+    Retourne (temps_calendaire, distance_depart) ou (None, None) si pas
+    coalesce avant t_max. distance_depart est la distance euclidienne
+    entre les deux lignees au tirage initial, pour pouvoir filtrer le
+    tableau (z1, z2, d, t) comme on le fait pour Moran.
     """
     x1, y1 = np.random.randint(0, l), np.random.randint(0, l)
     x2, y2 = np.random.randint(0, l), np.random.randint(0, l)
@@ -271,11 +307,15 @@ def backward_marche_aleatoire(l, m, lam, t_max):
 
 def afficher_comparaison(resultats_par_distance, l, m, lam, afficher, sauvegarder):
     """
-    Un sous-graphique par distance d0 : distribution du temps de
-    coalescence calendaire, Moran et marche aleatoire superposes (en
-    lignes plutot qu'en barres). Bins propres a chaque distribution.
+    Affiche un panneau de sous-graphiques (un par distance d0), chacun
+    montrant la distribution du temps de coalescence calendaire pour Moran
+    et pour la marche aleatoire, sous forme de lignes (un point par bin,
+    relies entre eux, comme un histogramme mais en ligne plutot qu'en barres).
 
-    resultats_par_distance : {d0: {"moran": array, "marche": array}}
+    Chaque distribution a ses propres bins, adaptes a sa propre echelle de
+    temps (Moran et la marche aleatoire ne coalescent pas a la meme vitesse).
+
+    resultats_par_distance : dictionnaire {d0: {"moran": array, "marche": array}}
     """
     distances = sorted(resultats_par_distance.keys())
     n_distances = len(distances)
@@ -373,8 +413,11 @@ parser.add_argument("--seed", type=int, default=None,
 args = parser.parse_args()
 
 if args.distances is None:
-    # distance max en ligne droite sur la grille = l-1 (coords de 0 a l-1)
-    # on coupe en 4 parts egales, arrondies a l'entier le plus proche
+    # on coupe l en 4 parts egales : la distance max atteignable en ligne
+    # droite sur la grille est l-1 (coordonnees de 0 a l-1), pas l.
+    # On arrondit chaque valeur a l'entier le plus proche, car seules les
+    # distances entieres (en ligne/colonne directe) sont presentes sur la
+    # grille de facon garantie.
     d_max = args.l - 1
     args.distances = [round(d_max / 4), round(2 * d_max / 4),
                        round(3 * d_max / 4), round(d_max)]
@@ -399,7 +442,8 @@ if args.seed is not None:
 print(f"Grille {args.l}x{args.l} | n={n} | T={T} | m={args.m} | lam={args.lam}")
 print(f"Distances comparees : {args.distances}")
 
-# --- Moran : tableau (t_fwd, d_fwd) avec le forward, comme dans comparaison_analytique.py ---
+# --- Moran : on construit le grand tableau (t_fwd, d_fwd) avec le forward,
+# exactement comme dans comparaison_analytique.py, sans rien changer ---
 print(f"\nSimulation forward Moran (T={T}, rep={args.rep})...")
 t_fwd_total = []
 d_fwd_total = []
@@ -415,11 +459,13 @@ t_fwd = np.array(t_fwd_total)
 d_fwd = np.array(d_fwd_total)
 print(f"\nSimulation forward terminee : {len(t_fwd)} paires au total")
 
-# conversion en calendaire : facteur 2 car les deux lignees diffusent
-# chacune (meme convention que proba_transition_exp)
-t_fwd_cal = 2 * t_fwd * args.m / (n * args.lam)
+# conversion en calendaire (sans m, cf. correction du 02/07). Le facteur 2
+# reste ici car on compare a la marche aleatoire (deux lignees qui remontent).
+t_fwd_cal = 2 * t_fwd / (n * args.lam)
 
-# --- Marche aleatoire : tableau (temps, distance) sur rep_marche paires tirees au hasard ---
+# --- Marche aleatoire : on construit le tableau complet (temps, distance)
+# en simulant args.rep paires tirees au hasard sur toute la grille, exactement
+# le meme principe que le tableau Moran (t_fwd, d_fwd) ---
 print(f"\nSimulation marche aleatoire (rep_marche={args.rep_marche})...")
 t_max_marche = (T * 5) / args.lam  # grosse marge de securite
 
@@ -442,7 +488,8 @@ d_marche = np.array(d_marche_total)
 print(f"\nSimulation marche aleatoire terminee : {len(t_marche_cal)} coalescences "
       f"({n_non_coal} non coalescees avant t_max)")
 
-# --- filtrage des deux tableaux par distance demandee ---
+# --- On filtre les deux tableaux (Moran et marche aleatoire) pour chaque
+# distance demandee, exactement la meme manip des deux cotes ---
 resultats_par_distance = {}
 
 for d0 in args.distances:

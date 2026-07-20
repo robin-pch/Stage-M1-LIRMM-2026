@@ -123,7 +123,7 @@ python src/moran_lignee_unique.py --l 10 --T 500 --m 0.5 --analytique_3d --affic
 ```
 
 | Option             | Description                                           | Défaut |
-|---------------------|----------------------------------------------------------|--------|
+|--------------------|-------------------------------------------------------|--------|
 | `--l`              | Côté de la grille (population = l*l)                  | `7`    |
 | `--T`              | Nombre de pas. Si absent, calculé automatiquement     | -      |
 | `--m`              | Taux de migration                                     | `1.0`  |
