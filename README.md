@@ -1,7 +1,7 @@
 # Stage M1 Bioinformatique - Robin Pioch
 
-**LIRMM, Université de Montpellier**  
-Encadrant : Stéphane Guindon  
+**LIRMM, Université de Montpellier**
+Encadrant : Stéphane Guindon
 2026
 
 ## Contexte
@@ -12,9 +12,10 @@ de modèles de génétique spatiale.
 ## Structure
 
 ```
-src/        --> scripts Python
-docs/       --> rapport bibliographique et journal de stage
-results/    --> graphiques générés (non versionnés)
+src/                    --> scripts Python
+src/vraisemblance/      --> génération de données et inférence du taux de migration
+docs/                   --> rapport bibliographique et journal de stage
+results/                --> graphiques générés (non versionnés)
 ```
 
 ## Scripts
@@ -34,8 +35,8 @@ python src/marche_aleatoire.py --modele M2 --m 0.5 --n 100 --d0 10 --rep 200
 ```
 
 | Option          | Description                                      | Défaut |
-|-----------------|--------------------------------------------------|--------|
-| `--modele`      | Modèle à simuler : `M1` ou `M2`                 | -      |
+|-----------------|---------------------------------------------------|--------|
+| `--modele`      | Modèle à simuler : `M1` ou `M2`                  | -      |
 | `--m`           | Probabilité de se déplacer à chaque pas          | `0.5`  |
 | `--n`           | Taille de la grille (n x n)                      | `100`  |
 | `--rep`         | Nombre de répétitions                            | `200`  |
@@ -56,15 +57,15 @@ soient tous les deux aléatoires, puis leurs densités jointes sont comparées v
 python src/marche_aleatoire_eq.py --m 0.5 --n 15 --T 2000 --rep 8000
 ```
 
-| Option          | Description                                              | Défaut   |
-|-----------------|----------------------------------------------------------|----------|
-| `--m`           | Probabilité de se déplacer à chaque pas                  | `0.5`    |
-| `--n`           | Taille de la grille (n x n)                              | `15`     |
-| `--T`           | Temps maximal (t tiré dans [0, T] pour M1)               | `2000`   |
-| `--rep`         | Nombre de répétitions                                    | `8000`   |
-| `--mode`        | Type de graphique : `joint` (2D) ou `marginal` (1D)      | `joint`  |
-| `--afficher`    | Affiche les graphiques à l'écran                         | -        |
-| `--sauvegarder` | Sauvegarde les graphiques en `.png`                      | -        |
+| Option          | Description                                           | Défaut  |
+|-----------------|---------------------------------------------------------|---------|
+| `--m`           | Probabilité de se déplacer à chaque pas                | `0.5`   |
+| `--n`           | Taille de la grille (n x n)                             | `15`    |
+| `--T`           | Temps maximal (t tiré dans [0, T] pour M1)              | `2000`  |
+| `--rep`         | Nombre de répétitions                                   | `8000`  |
+| `--mode`        | Type de graphique : `joint` (2D) ou `marginal` (1D)     | `joint` |
+| `--afficher`    | Affiche les graphiques à l'écran                        | -       |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                     | -       |
 
 ---
 
@@ -91,17 +92,17 @@ python src/moran_spatialise.py --l 7 --rep 200 --afficher
 python src/moran_spatialise.py --l 7 --T 50000 --rep 200 --sauvegarder
 ```
 
-| Option          | Description                                       | Défaut |
-|-----------------|---------------------------------------------------|--------|
-| `--l`           | Côté de la grille (population = l*l)              | `7`    |
-| `--T`           | Nombre de pas. Si absent, calculé automatiquement | -      |
-| `--m`           | Taux de migration                                 | `1.0`  |
-| `--rep`         | Nombre de répétitions                             | `200`  |
-| `--sigma`       | Ecart-type pour le schéma diagonale               | `1.0`  |
-| `--rayon`       | Rayon pour le schéma cercle                       | `l/4`  |
-| `--quantile`    | Percentile pour le crop des histogrammes          | `99`   |
-| `--afficher`    | Affiche les graphiques à l'écran                  | -      |
-| `--sauvegarder` | Sauvegarde les graphiques en `.png`               | -      |
+| Option          | Description                                        | Défaut |
+|-----------------|------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)               | `7`    |
+| `--T`           | Nombre de pas. Si absent, calculé automatiquement  | -      |
+| `--m`           | Taux de migration                                  | `1.0`  |
+| `--rep`         | Nombre de répétitions                              | `200`  |
+| `--sigma`       | Ecart-type pour le schéma diagonale                | `1.0`  |
+| `--rayon`       | Rayon pour le schéma cercle                        | `l/4`  |
+| `--quantile`    | Percentile pour le crop des histogrammes           | `99`   |
+| `--afficher`    | Affiche les graphiques à l'écran                   | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                | -      |
 
 ---
 
@@ -122,17 +123,17 @@ python src/moran_lignee_unique.py --l 10 --T 500 --rep 3000 --m 0.5 --sauvegarde
 python src/moran_lignee_unique.py --l 10 --T 500 --m 0.5 --analytique_3d --afficher
 ```
 
-| Option             | Description                                           | Défaut |
-|--------------------|-------------------------------------------------------|--------|
-| `--l`              | Côté de la grille (population = l*l)                  | `7`    |
-| `--T`              | Nombre de pas. Si absent, calculé automatiquement     | -      |
-| `--m`              | Taux de migration                                     | `1.0`  |
-| `--rep`            | Nombre de répétitions                                 | `500`  |
-| `--x0`             | Coordonnée x du point de départ                       | centre |
-| `--y0`             | Coordonnée y du point de départ                       | centre |
-| `--afficher`       | Affiche les graphiques à l'écran                      | -      |
-| `--sauvegarder`    | Sauvegarde les graphiques en `.png`                   | -      |
-| `--analytique_3d`  | Affiche uniquement la surface 3D analytique           | -      |
+| Option             | Description                                            | Défaut |
+|--------------------|----------------------------------------------------------|--------|
+| `--l`              | Côté de la grille (population = l*l)                    | `7`    |
+| `--T`              | Nombre de pas. Si absent, calculé automatiquement       | -      |
+| `--m`              | Taux de migration                                       | `1.0`  |
+| `--rep`            | Nombre de répétitions                                   | `500`  |
+| `--x0`             | Coordonnée x du point de départ                         | centre |
+| `--y0`             | Coordonnée y du point de départ                         | centre |
+| `--afficher`       | Affiche les graphiques à l'écran                        | -      |
+| `--sauvegarder`    | Sauvegarde les graphiques en `.png`                     | -      |
+| `--analytique_3d`  | Affiche uniquement la surface 3D analytique             | -      |
 
 ---
 
@@ -150,15 +151,15 @@ fonction du temps.
 python src/verif_approximation.py --l 7 --T 5000 --m 1.0 --afficher
 ```
 
-| Option          | Description                                          | Défaut |
-|-----------------|---------------------------------------------------------|--------|
-| `--l`           | Côté de la grille (population = l*l)                  | `7`    |
-| `--T`           | Temps de Moran                                        | `5000` |
-| `--m`           | Taux de migration                                     | `1.0`  |
-| `--lam`         | lambda = 1/temps de génération                        | `1.0`  |
-| `--r_max`       | Nombre de pas max pour le graphe proba/temps           | `40`   |
-| `--afficher`    | Affiche les graphiques à l'écran                      | -      |
-| `--sauvegarder` | Sauvegarde les graphiques en `.png`                   | -      |
+| Option          | Description                                              | Défaut |
+|-----------------|--------------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)                    | `7`    |
+| `--T`           | Temps de Moran                                           | `5000` |
+| `--m`           | Taux de migration                                        | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                           | `1.0`  |
+| `--r_max`       | Nombre de pas max pour le graphe proba/temps              | `40`   |
+| `--afficher`    | Affiche les graphiques à l'écran                         | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                       | -      |
 
 ---
 
@@ -175,15 +176,15 @@ aux simulations forward.
 python src/tableau_joint.py --l 7 --T 50 --n_t 5 --m 1.0 --sauvegarder
 ```
 
-| Option          | Description                                          | Défaut |
-|-----------------|---------------------------------------------------------|--------|
-| `--l`           | Côté de la grille (population = l*l)                  | `7`    |
-| `--T`           | Temps total (calendaire)                               | `50.0` |
-| `--n_t`         | Nombre de temps (coupes de T)                          | `5`    |
-| `--m`           | Taux de migration                                     | `1.0`  |
-| `--lam`         | lambda = 1/temps de génération                        | `1.0`  |
-| `--afficher`    | Affiche la figure                                     | -      |
-| `--sauvegarder` | Sauvegarde la figure et le csv                        | -      |
+| Option          | Description                                              | Défaut |
+|-----------------|--------------------------------------------------------------|--------|
+| `--l`           | Côté de la grille (population = l*l)                    | `7`    |
+| `--T`           | Temps total (calendaire)                                 | `50.0` |
+| `--n_t`         | Nombre de temps (coupes de T)                             | `5`    |
+| `--m`           | Taux de migration                                        | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                           | `1.0`  |
+| `--afficher`    | Affiche la figure                                         | -      |
+| `--sauvegarder` | Sauvegarde la figure et le csv                            | -      |
 
 ---
 
@@ -200,18 +201,18 @@ python src/comparaison_analytique.py --l 7 --rep 200 --afficher
 python src/comparaison_analytique.py --l 7 --rep 200 --sauvegarder --seed 42
 ```
 
-| Option          | Description                                                  | Défaut |
+| Option          | Description                                                    | Défaut |
 |-----------------|------------------------------------------------------------------|--------|
-| `--l`           | Côté de la grille (population = l*l)                          | `7`    |
-| `--T`           | Nombre de pas. Si absent, calculé automatiquement              | -      |
-| `--m`           | Taux de migration                                              | `1.0`  |
-| `--lam`         | lambda = 1/temps de génération                                | `1.0`  |
-| `--rep`         | Nombre de répétitions                                          | `200`  |
-| `--n_tirages`   | Nb de valeurs tirées dans l'analytique pour le KDE              | `2000` |
-| `--n_temps`     | Nb de tranches de temps pour le tableau analytique              | `50`   |
-| `--afficher`    | Affiche les graphiques                                         | -      |
-| `--sauvegarder` | Sauvegarde les graphiques en `.png`                            | -      |
-| `--seed`        | Graine pour reproductibilité                                   | -      |
+| `--l`           | Côté de la grille (population = l*l)                            | `7`    |
+| `--T`           | Nombre de pas. Si absent, calculé automatiquement                | -      |
+| `--m`           | Taux de migration                                                | `1.0`  |
+| `--lam`         | lambda = 1/temps de génération                                   | `1.0`  |
+| `--rep`         | Nombre de répétitions                                             | `200`  |
+| `--n_tirages`   | Nb de valeurs tirées dans l'analytique pour le KDE                | `2000` |
+| `--n_temps`     | Nb de tranches de temps pour le tableau analytique                | `50`   |
+| `--afficher`    | Affiche les graphiques                                            | -      |
+| `--sauvegarder` | Sauvegarde les graphiques en `.png`                               | -      |
+| `--seed`        | Graine pour reproductibilité                                      | -      |
 
 ---
 
@@ -227,16 +228,16 @@ python src/comparaison_pt_selon_m.py --l 7 --T 57491 --rep 100
 python src/comparaison_pt_selon_m.py --l 7 --T 57491 --rep 100 --m_liste 1.0 0.5 0.1 0.05
 ```
 
-| Option             | Description                                                       | Défaut                 |
-|---------------------|------------------------------------------------------------------------|-------------------------|
-| `--l`              | Côté de la grille (population = l*l)                                | `7`                     |
-| `--T`              | Nombre de pas de Moran, le même pour tous les m                     | `60000`                 |
-| `--lam`            | lambda = 1/temps de génération                                      | `1.0`                   |
-| `--rep`            | Nombre de répétitions par m                                          | `100`                   |
-| `--m_liste`        | Liste des m à tester                                                 | `1.0 0.5 0.1 0.05`      |
-| `--t_max_affiche`  | Largeur de l'axe X (temps calendaire). Si absent, calculé automatiquement | -                  |
-| `--sauvegarder`    | Sauvegarde le graphique en `.png`                                    | -                       |
-| `--seed`           | Graine pour reproductibilité                                         | -                       |
+| Option             | Description                                                                | Défaut              |
+|---------------------|-----------------------------------------------------------------------------|----------------------|
+| `--l`              | Côté de la grille (population = l*l)                                       | `7`                  |
+| `--T`              | Nombre de pas de Moran, le même pour tous les m                            | `60000`              |
+| `--lam`            | lambda = 1/temps de génération                                             | `1.0`                |
+| `--rep`            | Nombre de répétitions par m                                                | `100`                |
+| `--m_liste`        | Liste des m à tester                                                       | `1.0 0.5 0.1 0.05`   |
+| `--t_max_affiche`  | Largeur de l'axe X (temps calendaire). Si absent, calculé automatiquement  | -                    |
+| `--sauvegarder`    | Sauvegarde le graphique en `.png`                                          | -                    |
+| `--seed`           | Graine pour reproductibilité                                               | -                    |
 
 ---
 
@@ -254,18 +255,100 @@ python src/comparaison_temps_calendaire.py --l 7 --rep 500 --afficher
 python src/comparaison_temps_calendaire.py --l 7 --distances 1 2 4 6 --rep 500 --sauvegarder
 ```
 
-| Option           | Description                                                          | Défaut    |
-|-------------------|---------------------------------------------------------------------------|-----------|
-| `--l`            | Côté de la grille (population Moran = l*l)                              | `7`       |
-| `--m`            | Taux de migration                                                       | `1.0`     |
-| `--lam`          | lambda = 1/temps de génération                                          | `1.0`     |
-| `--distances`    | Liste des distances d0 à comparer. Si absent, calculé automatiquement     | -         |
-| `--rep`          | Nombre de répétitions du forward Moran                                   | `500`     |
-| `--rep_marche`   | Nombre de simulations marche aléatoire                                   | `20000`   |
-| `--T`            | Nombre de pas de Moran. Si absent, calculé automatiquement                | -         |
-| `--afficher`     | Affiche les graphiques                                                   | -         |
-| `--sauvegarder`  | Sauvegarde les graphiques en `.png`                                      | -         |
-| `--seed`         | Graine pour reproductibilité                                             | -         |
+| Option           | Description                                                            | Défaut  |
+|-------------------|--------------------------------------------------------------------------|---------|
+| `--l`            | Côté de la grille (population Moran = l*l)                              | `7`     |
+| `--m`            | Taux de migration                                                       | `1.0`   |
+| `--lam`          | lambda = 1/temps de génération                                          | `1.0`   |
+| `--distances`    | Liste des distances d0 à comparer. Si absent, calculé automatiquement   | -       |
+| `--rep`          | Nombre de répétitions du forward Moran                                  | `500`   |
+| `--rep_marche`   | Nombre de simulations marche aléatoire                                  | `20000` |
+| `--T`            | Nombre de pas de Moran. Si absent, calculé automatiquement               | -       |
+| `--afficher`     | Affiche les graphiques                                                  | -       |
+| `--sauvegarder`  | Sauvegarde les graphiques en `.png`                                     | -       |
+| `--seed`         | Graine pour reproductibilité                                            | -       |
+
+---
+
+### `src/vraisemblance/` : Inférence du taux de migration
+
+Génère des jeux de données (position de paires de lignées + temps de coalescence)
+selon deux méthodes, puis estime `m` et/ou `l` par maximum de vraisemblance.
+
+**Deux méthodes de génération**, produisant le même format de csv en sortie :
+
+- **Liste d'événements** (`ecrire_evenements.py` + `generation_donnees_evenements.py`) :
+  la "vraie" méthode Moran. Génère tous les événements sur la grille complète, puis
+  remonte le temps pour chaque paire d'échantillons jusqu'à coalescence. Coûteux en
+  mémoire et en temps, gardé comme référence pour valider l'approximation ci-dessous.
+- **Généalogie directe** (`generation_donnees_genealogie.py`) : simule directement
+  la généalogie des lignées échantillonnées (approximation par marche aléatoire),
+  sans passer par un fichier d'événements. Beaucoup plus rapide, méthode utilisée
+  en pratique pour les runs de production.
+
+```bash
+python src/vraisemblance/generation_donnees_genealogie.py --l 100 --m 0.3 --n_echantillons 50 --id_jeu 0 --sauvegarder
+python src/vraisemblance/ecrire_evenements.py --l 100 --m 0.5 --sauvegarder
+python src/vraisemblance/generation_donnees_evenements.py --entree evenements/evenements_tmp.csv --l 20 --m 0.5 --n_echantillons 50 --sauvegarder
+```
+
+**Vraisemblance**, deux scripts selon si `l` est fixé ou estimé :
+
+| Script                          | Paramètre(s) estimé(s) | Mode                        |
+|----------------------------------|-------------------------|------------------------------|
+| `vraisemblance.py`               | `m` seul                | `l` fixé à sa vraie valeur  |
+| `vraisemblance_ml.py` (défaut)   | `m` et `l` ensemble     | grille ou `--optimiser`     |
+| `vraisemblance_ml.py --m_fixe`   | `l` seul                | `m` fixé à sa vraie valeur  |
+
+```bash
+python src/vraisemblance/vraisemblance.py --entree donnees/donnees_jeu0.csv --n_m 50 --sauvegarder
+python src/vraisemblance/vraisemblance_ml.py --entree donnees/donnees_jeu0.csv --n_m 20 --n_l 20 --sauvegarder
+python src/vraisemblance/vraisemblance_ml.py --entree donnees/donnees_jeu0.csv --m_fixe --sauvegarder
+python src/vraisemblance/vraisemblance_ml.py --entree donnees/donnees_jeu0.csv --optimiser --sauvegarder
+```
+
+| Option                | Description                                                     | Défaut       |
+|-------------------------|--------------------------------------------------------------------|---------------|
+| `--entree`             | Csv de données (un seul jeu)                                       | -             |
+| `--n_m`, `--n_l`       | Nombre de valeurs testées en grille                                | `50` / `20`   |
+| `--l_min`, `--l_max`   | Bornes de `l` testées (`vraisemblance_ml.py`)                      | `5` / `200`   |
+| `--cond`               | Exclut les paires à distance nulle (renormalise)                   | -             |
+| `--echantillonnage`    | Corrige pour un schéma d'échantillonnage non uniforme              | -             |
+| `--m_fixe`             | Fixe `m` à sa vraie valeur, estime `l` seul (`vraisemblance_ml.py`) | -             |
+| `--optimiser`          | Nelder-Mead / Brent au lieu d'une grille complète                  | -             |
+| `--sauvegarder`        | Exporte les résultats en `.csv`                                    | -             |
+
+**Graphiques**, un script par échelle (un seul jeu / agrégat de plusieurs jeux)
+et par pipeline (`m` seul / `m` et `l`) :
+
+| Script                            | Échelle          | Paramètres                                              |
+|-------------------------------------|--------------------|------------------------------------------------------------|
+| `graphique_un_jeu.py`              | un seul jeu       | `m`                                                        |
+| `graphique_un_jeu_ml.py`           | un seul jeu       | `m` et `l` (carte de chaleur)                              |
+| `graphique_vraisemblance.py`       | plusieurs jeux    | `m`                                                        |
+| `graphique_vraisemblance_ml.py`    | plusieurs jeux    | `m` et `l` (un jeu de figures par taille d'échantillon)    |
+
+```bash
+python src/vraisemblance/graphique_un_jeu.py --donnees donnees/donnees_jeu0.csv --resultats resultats/resultats_jeu0.csv --afficher
+python src/vraisemblance/graphique_vraisemblance.py --dossier_donnees donnees --dossier_resultats resultats --afficher
+python src/vraisemblance/graphique_vraisemblance_ml.py --dossier_donnees donnees --dossier_resultats resultats --afficher
+```
+
+**Scripts d'orchestration** (local et cluster IFB, SLURM) : chaque méthode de
+génération a sa version locale et sa version cluster, et l'analyse par
+vraisemblance a son propre script de soumission cluster.
+
+| Script                                    | Rôle                                                          |
+|----------------------------------------------|--------------------------------------------------------------|
+| `lancer_generation_genealogie_local.py`    | Génère `n_jeux` jeux en local (généalogie)                   |
+| `lancer_generation_genealogie_cluster.py`  | Idem, un job SLURM par jeu                                    |
+| `lancer_generation_evenements_local.py`    | Génère `n_jeux` jeux en local (liste d'événements)            |
+| `lancer_generation_evenements_cluster.py`  | Idem, job array SLURM throttle (quota disque)                 |
+| `lancer_analyse_cluster.py`                | Calcule `vraisemblance.py` sur le cluster, un job par fichier |
+| `lancer_analyse_ml_cluster.py`             | Idem avec `vraisemblance_ml.py`                                |
+
+Les chemins de cluster (`DOSSIER_SCRIPTS`, `DOSSIER_TRAVAIL`, compte SLURM) sont
+en constantes en haut de chaque script `*_cluster.py`, à adapter si besoin.
 
 ## Dépendances
 
