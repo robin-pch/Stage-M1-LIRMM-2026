@@ -63,6 +63,9 @@ genealogie = charger_genealogie(args.dossier_genealogie, args.n_echantillons)
 
 l = int(moran["l"].iloc[0])
 m = float(moran["m"].iloc[0])
+lam = float(moran["lam"].iloc[0])
+n = l * l
+t_theorique = n / (m * lam)
 
 print("\n=== Moran (evenements) ===")
 print(f"  Lignes (coalescees) : {len(moran)}")
@@ -86,11 +89,9 @@ print(f"\n=== KS test Moran vs genealogie ===")
 print(f"  stat = {ks_stat:.5f}, p-value = {ks_pval:.5f}")
 
 # figure : histogramme + QQ plot
-# pas de courbe theorique ici : n/(m*lam) est valable pour une paire
-# isolee (cf. generer_donnees_steph.py), pas pour une paire prise dans
-# une genealogie partagee a n_echantillons lignees (la coalescence
-# depend de rencontres spatiales, pas d'un tirage uniforme parmi toutes
-# les paires actives comme dans le coalescent de Kingman classique)
+# la courbe theorique est affichee volontairement, meme si elle sous-estime
+# le temps de coalescence (ecart qui grandit avec l, deja vu avec Stephane) :
+# elle sert a montrer l'ecart, pas a valider un bon fit
 q99 = np.percentile(np.concatenate([moran["t"].values, genealogie["t"].values]), 99)
 bins = np.linspace(0, q99, 50)
 
@@ -102,6 +103,10 @@ axes[0].hist(moran["t"], bins=bins, density=True, alpha=0.5,
              color="steelblue", label=f"Moran")
 axes[0].hist(genealogie["t"], bins=bins, density=True, alpha=0.5,
              color="darkorange", label=f"Genealogie")
+taux = 1.0 / t_theorique
+x = np.linspace(0, q99, 300)
+axes[0].plot(x, taux * np.exp(-taux * x), "k--", linewidth=1.5,
+             label=f"Exponentielle theorique (moyenne={t_theorique:.0f})")
 axes[0].set_xlabel("Temps de coalescence")
 axes[0].set_ylabel("Densite")
 axes[0].legend(fontsize=9)
