@@ -13,7 +13,7 @@ de modèles de génétique spatiale.
 
 ```
 src/                    --> scripts Python
-src/vraisemblance/      --> génération de données et inférence du taux de migration
+src/vraisemblance/      --> génération de données et inférence du taux de migration et de la longueur de la grille
 docs/                   --> rapport bibliographique et journal de stage
 results/                --> graphiques générés (non versionnés)
 ```
